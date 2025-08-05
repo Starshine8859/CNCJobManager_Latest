@@ -1,0 +1,22 @@
+What the program is for
+I have a closet manufacturing company, I have a CNC router and use cabinetvision to produce G-Code to send to the CNC. There can be many types of material in a single job.
+
+I need 2 things:
+1)	I want to be able to put into a job the amount of sheet and in a separate space color material (maybe a spreadsheet) and when it’s being cut the operator should just check off what was already done, and I want to be able to see it across all network computers. I also need to be able to add recut sheets to the original files (pieces very often move on tha CNC and get damaged so I need to be able to put more sheets into the same job.
+2)	I want it to time (and get a report) on how ling every job takes. I was thinking maybe when they go into another job it starts timing that job, maybe you have a better sugestion)
+What data you’ll enter
+1)	Customer name and Job name (this will be the file name)
+2)	Qty of sheets
+3)	Material Color
+What you want the program to do with that data
+1)	Show me in real time  what is cut and what still needs to be cut
+2)	Generate a report of how long each project took (the report should include if the project still has sheets that still need to be done)
+3)	Maybe also divide the jobs in general tabs of “Waiting”, “In Progress”, “Done”
+We use windows computers in the shop (the computer I’m using now has windows server 2012
+Do it whatever way works best
+add a place in the backend where I can add all the colors I use and then I should have both options of writing or dropdown when selecting a color. Also I want to have a place in the backend where I can import textures to be displayed
+Add color groups (I want to be able to add, rename and remove groups from the backend
+add a place where I can view the jobs w/o time tracking (password protected and needs to have an option of “forgot password)
+make 2 admin categories View only admin or admin (admin will be able to add remove usernames and passwords
+I want a search option to find old jobs, jobs should be dated. also I want to be able to search colors so I don't need to go through the full list every time I enter a new color
+include a one-click setup
