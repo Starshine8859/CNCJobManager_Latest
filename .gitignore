@@ -4,3 +4,8 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+.gitignore
+.texture
+*.log
+*.env
+server/index.ts
