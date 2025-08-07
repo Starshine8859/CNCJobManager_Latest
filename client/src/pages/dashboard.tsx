@@ -219,11 +219,11 @@ export default function Dashboard() {
 
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
-      case 'waiting': return 'bg-gray-100 text-gray-600';
-      case 'in_progress': return 'bg-orange-100 text-orange-600';
-      case 'paused': return 'bg-yellow-100 text-yellow-600';
-      case 'done': return 'bg-green-100 text-green-600';
-      default: return 'bg-gray-100 text-gray-600';
+      case 'waiting': return 'bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 border border-slate-300';
+      case 'in_progress': return 'bg-gradient-to-r from-emerald-100 to-emerald-200 text-emerald-700 border border-emerald-300';
+      case 'paused': return 'bg-gradient-to-r from-amber-100 to-amber-200 text-amber-700 border border-amber-300';
+      case 'done': return 'bg-gradient-to-r from-green-100 to-green-200 text-green-700 border border-green-300';
+      default: return 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 border border-gray-300';
     }
   };
 
@@ -235,137 +235,173 @@ export default function Dashboard() {
 
   return (
     <Layout currentTime={currentTime}>
-      <div className="p-6">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
         {/* Dashboard Header */}
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-          <p className="text-gray-600 mt-1">Manage your CNC jobs and track progress</p>
+        <div className="mb-8">
+          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/50 p-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-4xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+                  Dashboard
+                </h2>
+                <p className="text-slate-600 mt-2 text-lg">Manage your CNC jobs and track progress in real-time</p>
+              </div>
+              <div className="hidden md:flex items-center space-x-4">
+                <div className="text-right">
+                  <p className="text-sm text-slate-500">Current Time</p>
+                  <p className="text-xl font-semibold text-slate-700">
+                    {currentTime.toLocaleTimeString()}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Search Bar */}
-        <div className="mb-6">
-          <div className="relative max-w-md">
-            <Input
-              type="text"
-              placeholder="Search jobs, customers, or materials..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-            <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+        <div className="mb-8">
+          <div className="max-w-md">
+            <div className="relative group">
+              <Input
+                type="text"
+                placeholder="Search jobs, customers, or materials..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-12 pr-4 py-3 text-lg border-2 border-slate-200 rounded-xl bg-white/90 backdrop-blur-sm shadow-lg focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all duration-300"
+              />
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400 group-focus-within:text-blue-500 transition-colors duration-300" />
+            </div>
           </div>
         </div>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card>
+          <Card className="group hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 bg-white/90 backdrop-blur-sm border-0 shadow-lg">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Active Jobs</p>
-                  <p className="text-3xl font-bold text-gray-900">{stats?.activeJobs || 0}</p>
+                  <p className="text-sm font-medium text-slate-600 mb-1">Active Jobs</p>
+                  <p className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">
+                    {stats?.activeJobs || 0}
+                  </p>
                 </div>
-                <div className="bg-blue-100 p-3 rounded-full">
-                  <div className="w-6 h-6 text-primary">📋</div>
+                <div className="bg-gradient-to-br from-blue-100 to-blue-200 p-4 rounded-2xl shadow-inner group-hover:shadow-lg transition-all duration-300">
+                  <div className="w-8 h-8 text-2xl">📋</div>
                 </div>
               </div>
-              <div className="mt-4">
-                <span className="text-xs text-green-600">
-                  ↗ 12% from last week
-                </span>
+              <div className="mt-4 flex items-center">
+                <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-full p-1">
+                  <span className="text-xs text-white font-semibold px-2">↗ 12%</span>
+                </div>
+                <span className="text-xs text-slate-500 ml-2">from last week</span>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="group hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 bg-white/90 backdrop-blur-sm border-0 shadow-lg">
             <CardContent className="p-6 flex flex-col h-full">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Sheets Cut</p>
-                  <p className="text-3xl font-bold text-gray-900">{stats?.sheetsCutToday || 0}</p>
+                  <p className="text-sm font-medium text-slate-600 mb-1">Sheets Cut</p>
+                  <p className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-emerald-800 bg-clip-text text-transparent">
+                    {stats?.sheetsCutToday || 0}
+                  </p>
                 </div>
-                <div className="bg-green-100 p-3 rounded-full">
-                  <div className="w-6 h-6 text-success">✂️</div>
+                <div className="bg-gradient-to-br from-emerald-100 to-emerald-200 p-4 rounded-2xl shadow-inner group-hover:shadow-lg transition-all duration-300">
+                  <div className="w-8 h-8 text-2xl">✂️</div>
                 </div>
               </div>
               <div className="mt-auto flex justify-center">
-                <DateRangePicker
-                  dateRange={sheetsCutDateRange}
-                  onDateRangeChange={setSheetsCutDateRange}
-                />
+                <div className="bg-slate-50 rounded-lg p-2 shadow-inner">
+                  <DateRangePicker
+                    dateRange={sheetsCutDateRange}
+                    onDateRangeChange={setSheetsCutDateRange}
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="group hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 bg-white/90 backdrop-blur-sm border-0 shadow-lg">
             <CardContent className="p-6 flex flex-col h-full">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="text-sm font-medium text-gray-600">Avg Time</p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="text-sm font-medium text-slate-600">Avg Time</p>
                     <Select value={avgTimeType} onValueChange={v => setAvgTimeType(v as 'job' | 'sheet')}>
-                      <SelectTrigger className="h-7 w-36 text-xs">
+                      <SelectTrigger className="h-8 w-36 text-xs bg-slate-50 border-slate-200 rounded-lg shadow-sm">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="job">Average Job Time</SelectItem>
-                        <SelectItem value="sheet">Average Sheet Time</SelectItem>
+                      <SelectContent className="bg-white shadow-xl border-0 rounded-xl">
+                        <SelectItem value="job" className="rounded-lg">Average Job Time</SelectItem>
+                        <SelectItem value="sheet" className="rounded-lg">Average Sheet Time</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   {avgTimeType === 'job' ? (
-                    <p className="text-3xl font-bold text-gray-900">
+                    <p className="text-3xl font-bold bg-gradient-to-r from-amber-600 to-amber-800 bg-clip-text text-transparent">
                       {stats?.avgJobTime ? formatDuration(stats.avgJobTime) : "0h 0m"}
                     </p>
                   ) : (
-                    <p className="text-3xl font-bold text-gray-900">
+                    <p className="text-3xl font-bold bg-gradient-to-r from-amber-600 to-amber-800 bg-clip-text text-transparent">
                       {stats?.avgSheetTime ? formatDuration(stats.avgSheetTime) : "0h 0m"}
                     </p>
                   )}
                 </div>
-                <div className="bg-orange-100 p-3 rounded-full">
-                  <Clock className="w-6 h-6 text-warning" />
+                <div className="bg-gradient-to-br from-amber-100 to-amber-200 p-4 rounded-2xl shadow-inner group-hover:shadow-lg transition-all duration-300">
+                  <Clock className="w-8 h-8 text-amber-600" />
                 </div>
               </div>
               <div className="mt-auto flex justify-center">
-                <DateRangePicker
-                  dateRange={avgTimeDateRange}
-                  onDateRangeChange={setAvgTimeDateRange}
-                />
+                <div className="bg-slate-50 rounded-lg p-2 shadow-inner">
+                  <DateRangePicker
+                    dateRange={avgTimeDateRange}
+                    onDateRangeChange={setAvgTimeDateRange}
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="group hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 bg-white/90 backdrop-blur-sm border-0 shadow-lg">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Material Colors</p>
-                  <p className="text-3xl font-bold text-gray-900">{stats?.materialColors || 0}</p>
+                  <p className="text-sm font-medium text-slate-600 mb-1">Material Colors</p>
+                  <p className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-purple-800 bg-clip-text text-transparent">
+                    {stats?.materialColors || 0}
+                  </p>
                 </div>
-                <div className="bg-purple-100 p-3 rounded-full">
-                  <div className="w-6 h-6 text-purple-600">🎨</div>
+                <div className="bg-gradient-to-br from-purple-100 to-purple-200 p-4 rounded-2xl shadow-inner group-hover:shadow-lg transition-all duration-300">
+                  <div className="w-8 h-8 text-2xl">🎨</div>
                 </div>
               </div>
               <div className="mt-4">
-                <span className="text-xs text-gray-600">Available in inventory</span>
+                <span className="text-xs text-slate-500 bg-slate-100 px-3 py-1 rounded-full">Available in inventory</span>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        
-
         {/* Active Jobs Table */}
-        <Card>
-          <div className="px-6 py-4 border-b border-gray-200">
+        <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-xl rounded-2xl overflow-hidden">
+          <div className="px-8 py-6 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-slate-100">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Active Jobs</h3>
-              <div className="flex items-center space-x-2">
-                <Button variant="ghost" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: ['/api/jobs'] })}>
+              <h3 className="text-2xl font-bold text-slate-800">Active Jobs</h3>
+              <div className="flex items-center space-x-3">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => queryClient.invalidateQueries({ queryKey: ['/api/jobs'] })}
+                  className="hover:bg-white/80 hover:shadow-md transition-all duration-300 rounded-xl"
+                >
                   <RefreshCw className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="sm">
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  className="hover:bg-white/80 hover:shadow-md transition-all duration-300 rounded-xl"
+                >
                   <Download className="h-4 w-4" />
                 </Button>
               </div>
@@ -374,31 +410,33 @@ export default function Dashboard() {
 
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50">
+              <thead className="bg-gradient-to-r from-slate-100 to-slate-200">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-8 py-4 text-left text-sm font-semibold text-slate-700 uppercase tracking-wider">
                     Job Details
                   </th>
-                  
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-8 py-4 text-left text-sm font-semibold text-slate-700 uppercase tracking-wider">
                     Progress
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-8 py-4 text-left text-sm font-semibold text-slate-700 uppercase tracking-wider">
                     Time
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-8 py-4 text-left text-sm font-semibold text-slate-700 uppercase tracking-wider">
                     Status
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-8 py-4 text-left text-sm font-semibold text-slate-700 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-slate-100">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                      Loading jobs...
+                    <td colSpan={5} className="px-8 py-12 text-center text-slate-500">
+                      <div className="flex items-center justify-center space-x-2">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                        <span>Loading jobs...</span>
+                      </div>
                     </td>
                   </tr>
                 ) : jobs.filter((job: JobWithMaterials) => {
@@ -409,8 +447,15 @@ export default function Dashboard() {
                     return matchesSearch && matchesStatus;
                   }).length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                      {jobs.length === 0 ? "No jobs found. Create a new job to get started." : "No jobs match your current filter criteria."}
+                    <td colSpan={5} className="px-8 py-12 text-center text-slate-500">
+                      <div className="flex flex-col items-center space-y-3">
+                        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center">
+                          <span className="text-2xl">📋</span>
+                        </div>
+                        <div>
+                          {jobs.length === 0 ? "No jobs found. Create a new job to get started." : "No jobs match your current filter criteria."}
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -470,26 +515,31 @@ export default function Dashboard() {
                     };
 
                     return (
-                      <tr key={job.id} className="hover:bg-gray-50 cursor-pointer" onClick={handleJobClick}>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">{job.jobName}</div>
-                            <div className="text-sm text-gray-500">{job.customerName}</div>
-                            <div className="text-xs text-gray-400">
+                      <tr key={job.id} className="hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 cursor-pointer transition-all duration-300 group" onClick={handleJobClick}>
+                        <td className="px-8 py-6 whitespace-nowrap">
+                          <div className="space-y-1">
+                            <div className="text-base font-semibold text-slate-900 group-hover:text-blue-700 transition-colors duration-300">{job.jobName}</div>
+                            <div className="text-sm text-slate-600 font-medium">{job.customerName}</div>
+                            <div className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-lg inline-block">
                               Created: {new Date(job.createdAt).toLocaleDateString()}
                             </div>
                           </div>
                         </td>
                         
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="w-full space-y-2">
+                        <td className="px-8 py-6 whitespace-nowrap">
+                          <div className="w-full space-y-3">
                             {/* Original Sheets Progress */}
-                                                        <div>
-                              <div className="flex justify-between items-center mb-1">
-                                <span className="text-xs text-gray-600 font-medium">Original Sheets</span>
-                                <span className="text-xs text-gray-700 font-semibold bg-gray-100 px-2 py-0.5 rounded">{completedSheets}/{effectiveTotalSheets}</span>
+                            <div className="bg-slate-50 p-3 rounded-xl">
+                              <div className="flex justify-between items-center mb-2">
+                                <span className="text-xs text-slate-600 font-semibold">Original Sheets</span>
+                                <span className="text-xs text-slate-700 font-bold bg-white px-3 py-1 rounded-full shadow-sm">{completedSheets}/{effectiveTotalSheets}</span>
                               </div>
-                              <Progress value={progress} className="h-2" />
+                              <div className="relative h-3 bg-slate-200 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-500 shadow-sm" 
+                                  style={{ width: `${progress}%` }}
+                                ></div>
+                              </div>
                             </div>
                             
                             {/* Recut Sheets Progress */}
@@ -517,13 +567,13 @@ export default function Dashboard() {
                               
                               if (recutTotal > 0) {
                                 return (
-                                  <div>
-                                    <div className="flex justify-between items-center mb-1">
-                                      <span className="text-xs text-orange-600 font-medium">Recut Sheets</span>
-                                      <span className="text-xs text-orange-700 font-semibold bg-orange-100 px-2 py-0.5 rounded">{recutCompleted}/{recutEffectiveTotal}</span>
+                                  <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
+                                    <div className="flex justify-between items-center mb-2">
+                                      <span className="text-xs text-amber-700 font-semibold">Recut Sheets</span>
+                                      <span className="text-xs text-amber-800 font-bold bg-amber-100 px-3 py-1 rounded-full shadow-sm">{recutCompleted}/{recutEffectiveTotal}</span>
                                     </div>
-                                    <div className="relative h-2 bg-orange-100 rounded-full overflow-hidden">
-                                      <div className="h-full bg-orange-500 rounded-full transition-all" style={{ width: `${recutProgress}%` }}></div>
+                                    <div className="relative h-3 bg-amber-200 rounded-full overflow-hidden">
+                                      <div className="h-full bg-gradient-to-r from-amber-500 to-amber-600 rounded-full transition-all duration-500 shadow-sm" style={{ width: `${recutProgress}%` }}></div>
                                     </div>
                                   </div>
                                 );
@@ -532,29 +582,37 @@ export default function Dashboard() {
                             })()}
                             
                             {/* Overall Progress Summary */}
-                            <div className="text-xs text-gray-500 pt-1 border-t">
-                              <span>Overall: {progress}%</span>
-                              {skippedSheets > 0 && <span className="ml-2">({skippedSheets} skipped)</span>}
+                            <div className="text-xs text-slate-500 pt-2 border-t border-slate-200 flex justify-between">
+                              <span className="font-medium">Overall: {progress}%</span>
+                              {skippedSheets > 0 && <span className="bg-slate-200 px-2 py-1 rounded-full">({skippedSheets} skipped)</span>}
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <div>
-                            {job.totalDuration ? formatDuration(job.totalDuration) : "Not started"}
+                        <td className="px-8 py-6 whitespace-nowrap">
+                          <div className="space-y-1">
+                            <div className="text-base font-semibold text-slate-900">
+                              {job.totalDuration ? formatDuration(job.totalDuration) : "Not started"}
+                            </div>
+                            {job.status === 'in_progress' && (
+                              <div className="flex items-center space-x-1">
+                                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                                <span className="text-xs text-emerald-600 font-medium">Running...</span>
+                              </div>
+                            )}
+                            {job.status === 'paused' && (
+                              <div className="flex items-center space-x-1">
+                                <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
+                                <span className="text-xs text-amber-600 font-medium">Paused</span>
+                              </div>
+                            )}
                           </div>
-                          {job.status === 'in_progress' && (
-                            <div className="text-xs text-blue-500">Running...</div>
-                          )}
-                          {job.status === 'paused' && (
-                            <div className="text-xs text-yellow-600">Paused</div>
-                          )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <Badge className={getStatusBadgeColor(job.status)}>
+                        <td className="px-8 py-6 whitespace-nowrap">
+                          <Badge className={`${getStatusBadgeColor(job.status)} px-3 py-1 text-sm font-medium rounded-lg shadow-sm`}>
                             {job.status.replace('_', ' ')}
                           </Badge>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <td className="px-8 py-6 whitespace-nowrap text-right text-sm font-medium">
                           <div className="flex items-center space-x-2">
                             {/* View button - only visible to admins and super admins */}
                             {(user?.role === 'admin' || user?.role === 'super_admin') && (
@@ -563,6 +621,7 @@ export default function Dashboard() {
                                 size="sm"
                                 onClick={handleViewOnlyClick}
                                 title="View job details (no timer)"
+                                className="hover:bg-blue-100 hover:text-blue-700 transition-all duration-300 rounded-xl p-2"
                               >
                                 <Eye className="h-4 w-4" />
                               </Button>
@@ -578,7 +637,7 @@ export default function Dashboard() {
                                   resumeJobMutation.mutate(job.id);
                                 }}
                                 disabled={resumeJobMutation.isPending}
-                                className="text-green-600 hover:text-green-800 hover:bg-green-50"
+                                className="hover:bg-emerald-100 hover:text-emerald-700 transition-all duration-300 rounded-xl p-2"
                               >
                                 <Play className="h-4 w-4" />
                               </Button>
@@ -591,7 +650,7 @@ export default function Dashboard() {
                                   pauseJobMutation.mutate(job.id);
                                 }}
                                 disabled={pauseJobMutation.isPending}
-                                className="text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50"
+                                className="hover:bg-amber-100 hover:text-amber-700 transition-all duration-300 rounded-xl p-2"
                               >
                                 <Pause className="h-4 w-4" />
                               </Button>
@@ -605,7 +664,7 @@ export default function Dashboard() {
                                 setDeleteJobId(job.id);
                               }}
                               disabled={deleteJobMutation.isPending}
-                              className="text-red-600 hover:text-red-800 hover:bg-red-50"
+                              className="hover:bg-red-100 hover:text-red-700 transition-all duration-300 rounded-xl p-2"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -636,19 +695,17 @@ export default function Dashboard() {
         onOpenPopup={() => {}}
       />
 
-
-
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!deleteJobId} onOpenChange={(open) => !open && setDeleteJobId(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="bg-white/95 backdrop-blur-sm border-0 shadow-2xl rounded-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Job</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className="text-xl font-bold text-slate-800">Delete Job</AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-600">
               Are you sure you want to delete this job? This action cannot be undone and will remove all associated materials and progress data.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogFooter className="space-x-3">
+            <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (deleteJobId) {
@@ -656,7 +713,7 @@ export default function Dashboard() {
                   setDeleteJobId(null);
                 }
               }}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 rounded-xl shadow-lg"
             >
               Delete Job
             </AlertDialogAction>
