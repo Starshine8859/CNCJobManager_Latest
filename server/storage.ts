@@ -86,6 +86,7 @@ export interface IStorage {
   createLocation(location: InsertLocation): Promise<Location>;
   updateLocation(id: number, name: string): Promise<void>;
   deleteLocation(id: number): Promise<void>;
+  getSuppliesAtLocation(locationId: number): Promise<any[]>;
 
   // Purchase order management
   getAllPurchaseOrders(fromDate?: string, toDate?: string): Promise<PurchaseOrderWithItems[]>;
@@ -93,6 +94,7 @@ export interface IStorage {
   updatePurchaseOrderReceived(id: number, dateReceived: Date): Promise<void>;
   getAllVendors(): Promise<Vendor[]>;
   createVendor(vendor: InsertVendor): Promise<Vendor>;
+  getVendorsForSupply(supplyId: number): Promise<Vendor[]>;
 
   // Dashboard stats
   getDashboardStats(sheetsFrom?: string, sheetsTo?: string, timeFrom?: string, timeTo?: string): Promise<{
@@ -1386,6 +1388,34 @@ export class DatabaseStorage implements IStorage {
     await db.delete(locations).where(eq(locations.id, id));
   }
 
+  async getSuppliesAtLocation(locationId: number): Promise<any[]> {
+    const suppliesWithStock = await db
+      .select({
+        id: supplies.id,
+        name: supplies.name,
+        hexColor: supplies.hexColor,
+        pieceSize: supplies.pieceSize,
+        partNumber: supplies.partNumber,
+        description: supplies.description,
+        availableInCatalog: supplies.availableInCatalog,
+        retailPrice: supplies.retailPrice,
+        imageUrl: supplies.imageUrl,
+        texture: supplies.texture,
+        createdAt: supplies.createdAt,
+        updatedAt: supplies.updatedAt,
+        onHandQuantity: supplyLocations.onHandQuantity,
+        minimumQuantity: supplyLocations.minimumQuantity,
+        orderGroupSize: supplyLocations.orderGroupSize,
+        allocationStatus: supplyLocations.allocationStatus
+      })
+      .from(supplies)
+      .innerJoin(supplyLocations, eq(supplies.id, supplyLocations.supplyId))
+      .where(eq(supplyLocations.locationId, locationId))
+      .orderBy(supplies.name);
+
+    return suppliesWithStock;
+  }
+
   // Purchase order management methods
   async getAllPurchaseOrders(fromDate?: string, toDate?: string): Promise<PurchaseOrderWithItems[]> {
     let conditions = [];
@@ -1492,6 +1522,29 @@ export class DatabaseStorage implements IStorage {
   async createVendor(vendor: InsertVendor): Promise<Vendor> {
     const result = await db.insert(vendors).values(vendor).returning();
     return result[0];
+  }
+
+  async getVendorsForSupply(supplyId: number): Promise<Vendor[]> {
+    const supplyVendorData = await db
+      .select({
+        id: vendors.id,
+        company: vendors.company,
+        contactInfo: vendors.contactInfo,
+        address: vendors.address,
+        phone: vendors.phone,
+        email: vendors.email,
+        createdAt: vendors.createdAt,
+        updatedAt: vendors.updatedAt,
+        price: supplyVendors.price,
+        vendorPartNumber: supplyVendors.vendorPartNumber,
+        isPreferred: supplyVendors.isPreferred
+      })
+      .from(vendors)
+      .innerJoin(supplyVendors, eq(vendors.id, supplyVendors.vendorId))
+      .where(eq(supplyVendors.supplyId, supplyId))
+      .orderBy(vendors.company);
+
+    return supplyVendorData;
   }
 }
 

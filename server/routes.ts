@@ -856,6 +856,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get vendors for a specific supply
+  app.get("/api/supplies/:id/vendors", requireAuth, async (req, res) => {
+    try {
+      const supplyId = parseInt(req.params.id);
+      const vendors = await storage.getVendorsForSupply(supplyId);
+      res.json(vendors);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch vendors for supply" });
+    }
+  });
+
+  // Get supplies with stock at a specific location
+  app.get("/api/locations/:id/supplies", requireAuth, async (req, res) => {
+    try {
+      const locationId = parseInt(req.params.id);
+      const supplies = await storage.getSuppliesAtLocation(locationId);
+      res.json(supplies);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch supplies at location" });
+    }
+  });
+
   // Purchase order routes
   app.get("/api/purchase-orders", requireAuth, async (req, res) => {
     try {

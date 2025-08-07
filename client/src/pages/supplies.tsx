@@ -49,14 +49,22 @@ interface Vendor {
 }
 
 // Enhanced TextureSwatch component with black letter fallback
-const TextureSwatch = ({ texture, hexColor, name, size = "md", isDarkMode = false }) => {
-  const sizeClasses = {
+interface TextureSwatchProps {
+  texture: string | null;
+  hexColor: string;
+  name: string;
+  size?: "sm" | "md" | "lg";
+  isDarkMode?: boolean;
+}
+
+const TextureSwatch = ({ texture, hexColor, name, size = "md", isDarkMode = false }: TextureSwatchProps) => {
+  const sizeClasses: Record<string, string> = {
     sm: "w-10 h-10",
     md: "w-14 h-14", 
     lg: "w-20 h-20"
   };
 
-  const textSizes = {
+  const textSizes: Record<string, string> = {
     sm: "text-xs",
     md: "text-sm",
     lg: "text-lg"
@@ -71,14 +79,14 @@ const TextureSwatch = ({ texture, hexColor, name, size = "md", isDarkMode = fals
   const firstLetter = name ? name.charAt(0).toUpperCase() : "?";
   
   // Generate a vibrant gradient based on the hex color
-  const generateGradient = (color) => {
+  const generateGradient = (color: string) => {
     const r = parseInt(color.slice(1, 3), 16);
     const g = parseInt(color.slice(3, 5), 16);
     const b = parseInt(color.slice(5, 7), 16);
     
     // Create a lighter version for gradient
-    const lighten = (val) => Math.min(255, val + 40);
-    const darken = (val) => Math.max(0, val - 20);
+    const lighten = (val: number) => Math.min(255, val + 40);
+    const darken = (val: number) => Math.max(0, val - 20);
     
     const lightColor = `rgb(${lighten(r)}, ${lighten(g)}, ${lighten(b)})`;
     const darkColor = `rgb(${darken(r)}, ${darken(g)}, ${darken(b)})`;
@@ -100,8 +108,12 @@ const TextureSwatch = ({ texture, hexColor, name, size = "md", isDarkMode = fals
             alt={name}
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
             onError={(e) => {
-              e.target.style.display = 'none';
-              e.target.nextSibling.style.display = 'flex';
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+              const nextSibling = target.nextSibling as HTMLElement;
+              if (nextSibling) {
+                nextSibling.style.display = 'flex';
+              }
             }}
             // style={{'backgroundColor':'black'}}
           />
@@ -329,7 +341,7 @@ export default function Supplies() {
       return response.json();
       } catch (error) {
         clearTimeout(timeoutId);
-        if (error.name === 'AbortError') {
+        if (error instanceof Error && error.name === 'AbortError') {
           throw new Error('Request timed out after 10 seconds');
         }
         throw error;
@@ -841,7 +853,7 @@ export default function Supplies() {
     supply.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const formatPrice = (priceInCents) => {
+  const formatPrice = (priceInCents: number | null | undefined) => {
     if (!priceInCents) return "—";
     return `$${(priceInCents / 100).toFixed(2)}`;
   };
@@ -1012,7 +1024,7 @@ export default function Supplies() {
             </tr>
           </thead>
           <tbody className={`divide-y ${themeClasses.border}`}>
-            {filteredSupplies.map((supply: Supply, index) => (
+            {filteredSupplies.map((supply: Supply, index: number) => (
               <tr key={supply.id} className={`${themeClasses.tableRow} transition-all duration-200 ${index % 2 === 0 ? (isDarkMode ? 'bg-gray-800' : 'bg-white') : (isDarkMode ? 'bg-gray-750' : 'bg-gray-50')}`}>
                 <td style={{'textAlign':'center'}}>{index+1} </td>
                 <td className="px-6 py-4 whitespace-nowrap">

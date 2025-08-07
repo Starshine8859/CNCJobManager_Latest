@@ -69,9 +69,21 @@ export default function CreatePurchaseOrder() {
     }
   });
 
-  // Fetch vendors
-  const { data: vendors = [] } = useQuery({
-    queryKey: ["vendors"],
+  // Fetch vendors for selected supply
+  const { data: vendorsForSupply = [] } = useQuery({
+    queryKey: ["vendors", selectedSupply],
+    queryFn: async () => {
+      if (!selectedSupply) return [];
+      const response = await fetch(`/api/supplies/${selectedSupply}/vendors`);
+      if (!response.ok) throw new Error("Failed to fetch vendors for supply");
+      return response.json();
+    },
+    enabled: !!selectedSupply
+  });
+
+  // Fetch all vendors (for fallback)
+  const { data: allVendors = [] } = useQuery({
+    queryKey: ["all-vendors"],
     queryFn: async () => {
       const response = await fetch("/api/vendors");
       if (!response.ok) throw new Error("Failed to fetch vendors");
@@ -89,13 +101,20 @@ export default function CreatePurchaseOrder() {
     }
   });
 
-  // Filter supplies by location
-  const filteredSupplies = supplies.filter((supply: Supply) => 
-    !selectedLocation || supply.location?.id.toString() === selectedLocation
-  );
+  // Fetch supplies at selected location
+  const { data: suppliesAtLocation = [] } = useQuery({
+    queryKey: ["supplies-at-location", selectedLocation],
+    queryFn: async () => {
+      if (!selectedLocation) return [];
+      const response = await fetch(`/api/locations/${selectedLocation}/supplies`);
+      if (!response.ok) throw new Error("Failed to fetch supplies at location");
+      return response.json();
+    },
+    enabled: !!selectedLocation
+  });
 
   // Get selected supply details
-  const selectedSupplyDetails = supplies.find((supply: Supply) => 
+  const selectedSupplyDetails = suppliesAtLocation.find((supply: any) => 
     supply.id.toString() === selectedSupply
   );
 
@@ -103,28 +122,17 @@ export default function CreatePurchaseOrder() {
   const handleLocationChange = (locationId: string) => {
     setSelectedLocation(locationId);
     
-    // Auto-select first item for this location
-    const locationItems = supplies.filter((supply: Supply) => 
-      supply.location?.id.toString() === locationId
-    );
-    
-    if (locationItems.length > 0) {
-      const defaultItem = locationItems[0];
-      setSelectedSupply(defaultItem.id.toString());
-      
-      // Auto-select default vendor if available
-      if (defaultItem.defaultVendorId) {
-        setSelectedVendor(defaultItem.defaultVendorId.toString());
-        setPricePerUnit((defaultItem.defaultVendorPrice || 50) / 100); // Convert from cents
-      } else {
-        setSelectedVendor("retail"); // Default to retail
-        setPricePerUnit(0);
-      }
-    } else {
-      setSelectedSupply("");
-      setSelectedVendor("");
-      setPricePerUnit(0);
-    }
+    // Reset selections - will be populated when data is fetched
+    setSelectedSupply("");
+    setSelectedVendor("");
+    setPricePerUnit(0);
+  };
+
+  // Handle supply selection change
+  const handleSupplyChange = (supplyId: string) => {
+    setSelectedSupply(supplyId);
+    setSelectedVendor(""); // Reset vendor selection
+    setPricePerUnit(0);
   };
 
   // Create purchase order mutation
@@ -175,8 +183,8 @@ export default function CreatePurchaseOrder() {
       return;
     }
 
-    const supply = supplies.find((s: Supply) => s.id.toString() === selectedSupply);
-    const vendor = vendors.find((v: Vendor) => v.id.toString() === selectedVendor);
+    const supply = suppliesAtLocation.find((s: any) => s.id.toString() === selectedSupply);
+    const vendor = vendorsForSupply.find((v: any) => v.id.toString() === selectedVendor);
     
     if (!supply) {
       toast({
@@ -192,7 +200,7 @@ export default function CreatePurchaseOrder() {
       supplyId: parseInt(selectedSupply),
       supplyName: supply.name,
       vendorId: selectedVendor === "retail" ? 0 : parseInt(selectedVendor),
-      vendorName: selectedVendor === "retail" ? "Retail($0.00)" : (vendor?.name || "Unknown"),
+      vendorName: selectedVendor === "retail" ? "Retail($0.00)" : (vendor?.company || "Unknown"),
       quantity,
       pricePerUnit,
       totalPrice: quantity * pricePerUnit,
@@ -314,14 +322,14 @@ export default function CreatePurchaseOrder() {
 
                   <div>
                     <Label htmlFor="item">Item</Label>
-                    <Select value={selectedSupply} onValueChange={setSelectedSupply}>
+                    <Select value={selectedSupply} onValueChange={handleSupplyChange}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select item" />
                       </SelectTrigger>
                       <SelectContent>
-                        {filteredSupplies.map((supply: Supply) => (
+                        {suppliesAtLocation.map((supply: any) => (
                           <SelectItem key={supply.id} value={supply.id.toString()}>
-                            {supply.name}
+                            {supply.name} (Stock: {supply.onHandQuantity})
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -336,9 +344,9 @@ export default function CreatePurchaseOrder() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="retail">Retail($0.00)</SelectItem>
-                        {vendors.map((vendor: Vendor) => (
+                        {vendorsForSupply.map((vendor: any) => (
                           <SelectItem key={vendor.id} value={vendor.id.toString()}>
-                            {vendor.name}
+                            {vendor.company} - ${(vendor.price / 100).toFixed(2)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -435,9 +443,9 @@ export default function CreatePurchaseOrder() {
                                   </SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="retail">Retail($0.00)</SelectItem>
-                                    {vendors.map((vendor: Vendor) => (
+                                    {vendorsForSupply.map((vendor: any) => (
                                       <SelectItem key={vendor.id} value={vendor.id.toString()}>
-                                        {vendor.name}
+                                        {vendor.company} - ${(vendor.price / 100).toFixed(2)}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>
