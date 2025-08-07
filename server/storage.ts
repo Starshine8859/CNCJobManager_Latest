@@ -229,7 +229,7 @@ export class DatabaseStorage implements IStorage {
     const materialPromises = jobData.materials.map(material =>
       db.insert(jobMaterials).values({
         cutlistId: cutlist.id,
-        colorId: material.colorId,
+        supplyId: material.colorId, // colorId is actually supplyId from the frontend
         totalSheets: material.totalSheets,
       }).returning()
     );
@@ -257,22 +257,22 @@ export class DatabaseStorage implements IStorage {
           .select({
             id: jobMaterials.id,
             cutlistId: jobMaterials.cutlistId,
-            colorId: jobMaterials.colorId,
+            supplyId: jobMaterials.supplyId,
             totalSheets: jobMaterials.totalSheets,
             completedSheets: jobMaterials.completedSheets,
             sheetStatuses: jobMaterials.sheetStatuses,
             createdAt: jobMaterials.createdAt,
             color: {
-              id: colors.id,
-              name: colors.name,
-              hexColor: colors.hexColor,
-              groupId: colors.groupId,
-              texture: colors.texture,
-              createdAt: colors.createdAt,
+              id: supplies.id,
+              name: supplies.name,
+              hexColor: supplies.hexColor,
+              groupId: supplies.locationId, // Map locationId to groupId for backward compatibility
+              texture: supplies.texture,
+              createdAt: supplies.createdAt,
             }
           })
           .from(jobMaterials)
-          .innerJoin(colors, eq(jobMaterials.colorId, colors.id))
+          .innerJoin(supplies, eq(jobMaterials.supplyId, supplies.id))
           .where(eq(jobMaterials.cutlistId, cutlist.id));
 
         // For each material, get recut entries
@@ -623,7 +623,7 @@ export class DatabaseStorage implements IStorage {
     // Add the new material to the cutlist
     await db.insert(jobMaterials).values({
       cutlistId: cutlistId,
-      colorId: colorId,
+      supplyId: colorId, // colorId is actually supplyId from the frontend
       totalSheets: totalSheets,
       completedSheets: 0,
       sheetStatuses: initialStatuses,
@@ -881,10 +881,19 @@ export class DatabaseStorage implements IStorage {
 
 
   async getAllColors(): Promise<ColorWithGroup[]> {
-    return await db.query.colors.findMany({
-      with: { group: true },
-      orderBy: colors.name
-    }) as ColorWithGroup[];
+    // Redirect to supplies for backward compatibility
+    const supplies = await this.getAllSupplies();
+    // Transform supplies to match the old colors format for backward compatibility
+    const colors = supplies.map(supply => ({
+      id: supply.id,
+      name: supply.name,
+      hexColor: supply.hexColor,
+      groupId: supply.locationId,
+      texture: supply.texture,
+      createdAt: supply.createdAt,
+      group: supply.location ? { id: supply.location.id, name: supply.location.name } : null
+    }));
+    return colors as ColorWithGroup[];
   }
 
   async createColor(color: InsertColor): Promise<Color> {

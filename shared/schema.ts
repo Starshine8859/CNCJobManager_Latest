@@ -139,7 +139,7 @@ export const cutlists = pgTable("cutlists", {
 export const jobMaterials = pgTable("job_materials", {
   id: serial("id").primaryKey(),
   cutlistId: integer("cutlist_id").references(() => cutlists.id),
-  colorId: integer("color_id").references(() => colors.id).notNull(),
+  supplyId: integer("supply_id").references(() => supplies.id).notNull(),
   totalSheets: integer("total_sheets").notNull(),
   completedSheets: integer("completed_sheets").notNull().default(0),
   sheetStatuses: text("sheet_statuses").array().default([]), // Array of 'cut', 'skip', 'pending'
@@ -198,9 +198,9 @@ export const jobMaterialsRelations = relations(jobMaterials, ({ one, many }) => 
     fields: [jobMaterials.cutlistId],
     references: [cutlists.id],
   }),
-  color: one(colors, {
-    fields: [jobMaterials.colorId],
-    references: [colors.id],
+  supply: one(supplies, {
+    fields: [jobMaterials.supplyId],
+    references: [supplies.id],
   }),
   recutEntries: many(recutEntries),
 }));
@@ -315,6 +315,12 @@ export const purchaseOrderItemsRelations = relations(purchaseOrderItems, ({ one 
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
+});
+
+export const insertSessionSchema = createInsertSchema(sessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
 });
 
 export const insertColorGroupSchema = createInsertSchema(colorGroups).omit({
