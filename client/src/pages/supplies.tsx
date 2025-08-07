@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Package, Search, Plus, Edit, Trash2, Upload, X, Save, AlertTriangle } from "lucide-react";
+import { Package, Search, Plus, Edit, Trash2, Upload, X, Save, AlertTriangle, LayoutGrid, Table as TableIcon, Sparkles, Palette, Moon, Sun } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,6 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/layout";
-import { TextureSwatch } from "@/components/ui/texture-swatch";
 
 interface Supply {
   id: number;
@@ -39,11 +38,101 @@ interface Location {
   name: string;
 }
 
+// Enhanced TextureSwatch component with black letter fallback
+const TextureSwatch = ({ texture, hexColor, name, size = "md", isDarkMode = false }) => {
+  const sizeClasses = {
+    sm: "w-10 h-10",
+    md: "w-14 h-14", 
+    lg: "w-20 h-20"
+  };
 
+  const textSizes = {
+    sm: "text-xs",
+    md: "text-sm",
+    lg: "text-lg"
+  };
+
+  const textureUrl = texture && texture.startsWith('/uploads/') 
+    ? texture 
+    : texture && !texture.startsWith('http') && texture !== ""
+    ? `/uploads/${texture}` 
+    : texture;
+
+  const firstLetter = name ? name.charAt(0).toUpperCase() : "?";
+  
+  // Generate a vibrant gradient based on the hex color
+  const generateGradient = (color) => {
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    
+    // Create a lighter version for gradient
+    const lighten = (val) => Math.min(255, val + 40);
+    const darken = (val) => Math.max(0, val - 20);
+    
+    const lightColor = `rgb(${lighten(r)}, ${lighten(g)}, ${lighten(b)})`;
+    const darkColor = `rgb(${darken(r)}, ${darken(g)}, ${darken(b)})`;
+    
+    return `linear-gradient(135deg, ${lightColor} 0%, ${color} 50%, ${darkColor} 100%)`;
+  };
+
+  const borderClass = isDarkMode ? "border-gray-600" : "border-white";
+  const shineClass = isDarkMode 
+    ? "bg-gradient-to-r from-transparent via-gray-300 to-transparent" 
+    : "bg-gradient-to-r from-transparent via-white to-transparent";
+
+  return (
+    <div className={`${sizeClasses[size]} rounded-xl border-3 ${borderClass} shadow-lg overflow-hidden flex-shrink-0 relative group transition-all duration-300 hover:scale-105 hover:shadow-xl`}>
+      {textureUrl && textureUrl !== "" ? (
+        <>
+          <img 
+            src={textureUrl} 
+            alt={name}
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+            onError={(e) => {
+              e.target.style.display = 'none';
+              e.target.nextSibling.style.display = 'flex';
+            }}
+            // style={{'backgroundColor':'black'}}
+          />
+          <div 
+            className="w-full h-full flex items-center justify-center font-bold text-black shadow-inner"
+            style={{ 
+              background: generateGradient(hexColor),
+              display: 'none'
+            }}
+            title={name}
+          >
+            <span className={`${textSizes[size]} font-extrabold drop-shadow-lg`}>
+              {firstLetter}
+            </span>
+          </div>
+        </>
+      ) : (
+        <div 
+          className="w-full h-full flex items-center justify-center font-bold text-black shadow-inner"
+          style={{ 
+            background: generateGradient(hexColor)
+          }}
+          title={name}
+        >
+          <span className={`${textSizes[size]} font-extrabold drop-shadow-lg`}>
+            {firstLetter}
+          </span>
+        </div>
+      )}
+      
+      {/* Shine effect */}
+      <div className={`absolute inset-0 ${shineClass} opacity-0 group-hover:opacity-20 transform -skew-x-12 transition-all duration-700 group-hover:translate-x-full`}></div>
+    </div>
+  );
+};
 
 export default function Supplies() {
   const [currentTime] = useState(new Date());
   const [searchTerm, setSearchTerm] = useState("");
+  const [viewMode, setViewMode] = useState("card"); // "card" or "table"
+  const [isDarkMode, setIsDarkMode] = useState(false); // Dark mode state
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingSupply, setEditingSupply] = useState<Supply | null>(null);
@@ -56,7 +145,7 @@ export default function Supplies() {
   // Form states for add/edit supply
   const [supplyForm, setSupplyForm] = useState({
     name: "",
-    hexColor: "#000000",
+    hexColor: "#6366f1",
     pieceSize: "sheet",
     quantityOnHand: 0,
     locationId: undefined as number | undefined,
@@ -68,7 +157,7 @@ export default function Supplies() {
   // Form states for edit supply
   const [editSupplyForm, setEditSupplyForm] = useState({
     name: "",
-    hexColor: "#000000",
+    hexColor: "#6366f1",
     pieceSize: "sheet",
     quantityOnHand: 0,
     locationId: undefined as number | undefined,
@@ -76,6 +165,19 @@ export default function Supplies() {
     defaultVendorPrice: undefined as number | undefined,
     texture: null as string | null
   });
+
+  // Load dark mode preference from localStorage
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('darkMode');
+    if (savedTheme) {
+      setIsDarkMode(JSON.parse(savedTheme));
+    }
+  }, []);
+
+  // Save dark mode preference to localStorage
+  useEffect(() => {
+    localStorage.setItem('darkMode', JSON.stringify(isDarkMode));
+  }, [isDarkMode]);
 
   // Fetch supplies
   const { data: supplies = [], isLoading: suppliesLoading } = useQuery({
@@ -109,16 +211,6 @@ export default function Supplies() {
     retry: false
   });
 
-  // Debug logging
-  console.log('Supplies component rendered');
-  console.log('showAddDialog:', showAddDialog);
-  console.log('suppliesLoading:', suppliesLoading);
-  console.log('locationsLoading:', locationsLoading);
-  console.log('vendorsLoading:', vendorsLoading);
-  console.log('supplies:', supplies);
-  console.log('locations:', locations);
-  console.log('vendors:', vendors);
-
   // Create supply mutation
   const createSupplyMutation = useMutation({
     mutationFn: async (supplyData: any) => {
@@ -135,13 +227,13 @@ export default function Supplies() {
       setShowAddDialog(false);
       resetSupplyForm();
       toast({
-        title: "Success",
+        title: "✨ Success",
         description: "Supply created successfully",
       });
     },
     onError: (error) => {
       toast({
-        title: "Error",
+        title: "❌ Error",
         description: error.message,
         variant: "destructive",
       });
@@ -165,13 +257,13 @@ export default function Supplies() {
       setEditingSupply(null);
       resetEditSupplyForm();
       toast({
-        title: "Success",
+        title: "✨ Success",
         description: "Supply updated successfully",
       });
     },
     onError: (error) => {
       toast({
-        title: "Error",
+        title: "❌ Error",
         description: error.message,
         variant: "destructive",
       });
@@ -191,13 +283,13 @@ export default function Supplies() {
       queryClient.invalidateQueries({ queryKey: ["supplies"] });
       setSupplyToDelete(null);
       toast({
-        title: "Success",
+        title: "✨ Success",
         description: "Supply deleted successfully",
       });
     },
     onError: (error) => {
       toast({
-        title: "Error",
+        title: "❌ Error",
         description: error.message,
         variant: "destructive",
       });
@@ -220,13 +312,13 @@ export default function Supplies() {
       setShowLocationDialog(false);
       setNewLocationName("");
       toast({
-        title: "Success",
+        title: "✨ Success",
         description: "Location created successfully",
       });
     },
     onError: (error) => {
       toast({
-        title: "Error",
+        title: "❌ Error",
         description: error.message,
         variant: "destructive",
       });
@@ -250,13 +342,13 @@ export default function Supplies() {
       setSupplyForm(prev => ({ ...prev, texture: filename }));
       setEditSupplyForm(prev => ({ ...prev, texture: filename }));
       toast({
-        title: "Success",
+        title: "🖼️ Success",
         description: "Texture uploaded successfully",
       });
     },
     onError: (error) => {
       toast({
-        title: "Error",
+        title: "❌ Error",
         description: error.message,
         variant: "destructive",
       });
@@ -266,7 +358,7 @@ export default function Supplies() {
   const resetSupplyForm = () => {
     setSupplyForm({
       name: "",
-      hexColor: "#000000",
+      hexColor: "#6366f1",
       pieceSize: "sheet",
       quantityOnHand: 0,
       locationId: undefined,
@@ -279,7 +371,7 @@ export default function Supplies() {
   const resetEditSupplyForm = () => {
     setEditSupplyForm({
       name: "",
-      hexColor: "#000000",
+      hexColor: "#6366f1",
       pieceSize: "sheet",
       quantityOnHand: 0,
       locationId: undefined,
@@ -346,118 +438,380 @@ export default function Supplies() {
     supply.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const formatPrice = (priceInCents) => {
+    if (!priceInCents) return "—";
+    return `$${(priceInCents / 100).toFixed(2)}`;
+  };
+
+  // Theme classes
+  const themeClasses = {
+    background: isDarkMode ? "bg-gray-900" : "bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100",
+    header: isDarkMode ? "bg-gradient-to-r from-gray-800 via-gray-700 to-gray-600" : "bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600",
+    card: isDarkMode 
+      ? "bg-gradient-to-br from-gray-800 via-gray-800 to-gray-700 hover:from-gray-700 hover:via-gray-800 hover:to-gray-600" 
+      : "bg-gradient-to-br from-white via-white to-gray-50 hover:from-purple-50 hover:via-white hover:to-indigo-50",
+    searchBar: isDarkMode ? "bg-gray-800/80" : "bg-white/80",
+    text: isDarkMode ? "text-white" : "text-gray-900",
+    textSecondary: isDarkMode ? "text-gray-300" : "text-gray-600",
+    border: isDarkMode ? "border-gray-600" : "border-gray-200",
+    table: isDarkMode ? "bg-gray-800" : "bg-white",
+    tableRow: isDarkMode 
+      ? "hover:bg-gradient-to-r hover:from-gray-700 hover:to-gray-600" 
+      : "hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50",
+    dialog: isDarkMode ? "bg-gradient-to-br from-gray-800 to-gray-700" : "bg-gradient-to-br from-white to-gray-50",
+    input: isDarkMode 
+      ? "bg-gray-700 border-gray-600 text-white focus:border-indigo-400" 
+      : "border-gray-200 focus:border-indigo-500"
+  };
+
+  // Card View Component
+  const CardView = () => (
+    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {filteredSupplies.map((supply: Supply) => (
+        <Card key={supply.id} className={`group hover:shadow-2xl transition-all duration-300 border-0 ${themeClasses.card} rounded-2xl overflow-hidden transform hover:-translate-y-1`}>
+          <CardContent className="p-6">
+            <div className="flex items-start justify-between mb-6">
+              <div className="flex items-center space-x-4 min-w-0 flex-1">
+                <TextureSwatch
+                  texture={supply.texture}
+                  hexColor={supply.hexColor}
+                  name={supply.name}
+                  size="lg"
+                  isDarkMode={isDarkMode}
+                />
+                <div className="min-w-0 flex-1">
+                  <h3 className={`text-lg font-bold ${themeClasses.text} truncate mb-1`} title={supply.name}>
+                    {supply.name}
+                  </h3>
+                  <div className="flex items-center space-x-2">
+                    <Badge variant="outline" className={`text-xs ${isDarkMode ? 'bg-gradient-to-r from-blue-900 to-purple-900 border-blue-700 text-blue-300' : 'bg-gradient-to-r from-blue-100 to-purple-100 border-blue-200 text-blue-800'}`}>
+                      {supply.pieceSize}
+                    </Badge>
+                    <span className={`text-xs ${themeClasses.textSecondary}`}>•</span>
+                    <span className={`text-xs ${themeClasses.textSecondary} font-medium`}>
+                      {supply.location?.name || "No location"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2 flex-shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openEditDialog(supply)}
+                  className={`h-8 w-8 p-0 border-0 ${isDarkMode ? 'bg-gradient-to-r from-blue-800 to-indigo-800 hover:from-blue-700 hover:to-indigo-700 text-blue-300' : 'bg-gradient-to-r from-blue-100 to-indigo-100 hover:from-blue-200 hover:to-indigo-200 text-blue-700'} rounded-xl`}
+                >
+                  <Edit className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSupplyToDelete(supply)}
+                  className={`h-8 w-8 p-0 border-0 ${isDarkMode ? 'bg-gradient-to-r from-red-800 to-pink-800 hover:from-red-700 hover:to-pink-700 text-red-300' : 'bg-gradient-to-r from-red-100 to-pink-100 hover:from-red-200 hover:to-pink-200 text-red-700'} rounded-xl`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className={`text-xs ${themeClasses.textSecondary} font-medium`}>On Hand:</span>
+                  <Badge className="">
+                    {supply.quantityOnHand}
+                  </Badge>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className={`text-xs ${themeClasses.textSecondary} font-medium`}>Available:</span>
+                  <Badge className="">
+                    {supply.available}
+                  </Badge>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className={`text-xs ${themeClasses.textSecondary} font-medium`}>Allocated:</span>
+                  <Badge className="">
+                    {supply.allocated}
+                  </Badge>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className={`text-xs ${themeClasses.textSecondary} font-medium`}>Used:</span>
+                  <Badge className="">
+                    {supply.used}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+            
+            {supply.defaultVendor && (
+              <div className={`pt-4 border-t ${themeClasses.border}`}>
+                <div className={`${isDarkMode ? 'bg-gradient-to-r from-indigo-900 to-purple-900' : 'bg-gradient-to-r from-indigo-50 to-purple-50'} rounded-xl p-3`}>
+                  <div className="flex justify-between items-center text-sm mb-1">
+                    <span className={`${themeClasses.textSecondary} font-medium`}>Vendor:</span>
+                    <span className={`font-bold ${isDarkMode ? 'text-indigo-300' : 'text-indigo-700'} truncate ml-2`} title={supply.defaultVendor}>
+                      {supply.defaultVendor}
+                    </span>
+                  </div>
+                  {supply.defaultVendorPrice && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className={`${themeClasses.textSecondary} font-medium`}>Price:</span>
+                      <span className={`font-bold ${isDarkMode ? 'text-green-400' : 'text-green-700'}`}>{formatPrice(supply.defaultVendorPrice)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+
+  // Table View Component
+  const TableView = () => (
+    <div className={`${themeClasses.table} rounded-2xl border-0 shadow-xl overflow-hidden`}>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead className={`${themeClasses.header} text-white`}>
+            <tr>              
+              <th className="px-6 py-4 text-center">
+                No
+              </th>
+              <th className="px-6 py-4 text-left text-sm font-bold uppercase tracking-wider">
+                Material
+              </th>
+              <th className="px-6 py-4 text-left text-sm font-bold uppercase tracking-wider">
+                Location
+              </th>
+              <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
+                On Hand
+              </th>
+              <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
+                Available
+              </th>
+              <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
+                Allocated
+              </th>
+              <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
+                Used
+              </th>
+              <th className="px-6 py-4 text-left text-sm font-bold uppercase tracking-wider">
+                Vendor
+              </th>
+              <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
+                Price
+              </th>
+              <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody className={`divide-y ${themeClasses.border}`}>
+            {filteredSupplies.map((supply: Supply, index) => (
+              <tr key={supply.id} className={`${themeClasses.tableRow} transition-all duration-200 ${index % 2 === 0 ? (isDarkMode ? 'bg-gray-800' : 'bg-white') : (isDarkMode ? 'bg-gray-750' : 'bg-gray-50')}`}>
+                <td style={{'textAlign':'center'}}>{index+1} </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center space-x-4">
+                    <TextureSwatch
+                      texture={supply.texture}
+                      hexColor={supply.hexColor}
+                      name={supply.name}
+                      size="sm"
+                      isDarkMode={isDarkMode}
+                    />
+                    <div className="min-w-0">
+                      <div className={`text-sm font-bold ${themeClasses.text} truncate max-w-xs`} title={supply.name}>
+                        {supply.name}
+                      </div>
+                      <Badge variant="outline" className={`text-xs mt-1 ${isDarkMode ? 'bg-gradient-to-r from-blue-900 to-purple-900 border-blue-700 text-blue-300' : 'bg-gradient-to-r from-blue-100 to-purple-100 border-blue-200 text-blue-800'}`}>
+                        {supply.pieceSize}
+                      </Badge>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className={`text-sm font-medium ${themeClasses.text}`}>
+                    {supply.location?.name || "—"}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                  <Badge className="">
+                    {supply.quantityOnHand}
+                  </Badge>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                  <Badge className="">
+                    {supply.available}
+                  </Badge>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                  <Badge className="">
+                    {supply.allocated}
+                  </Badge>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                  <Badge className="">
+                    {supply.used}
+                  </Badge>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className={`text-sm font-medium ${themeClasses.text} truncate max-w-32`} title={supply.defaultVendor}>
+                    {supply.defaultVendor || "—"}
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                  <span className={`text-sm font-bold ${isDarkMode ? 'text-green-400' : 'text-green-700'}`}>
+                    {formatPrice(supply.defaultVendorPrice)}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                  <div className="flex items-center justify-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openEditDialog(supply)}
+                      className={`h-8 w-8 p-0 border-0 ${isDarkMode ? 'bg-gradient-to-r from-blue-800 to-indigo-800 hover:from-blue-700 hover:to-indigo-700 text-blue-300' : 'bg-gradient-to-r from-blue-100 to-indigo-100 hover:from-blue-200 hover:to-indigo-200 text-blue-700'} rounded-xl`}
+                    >
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSupplyToDelete(supply)}
+                      className={`h-8 w-8 p-0 border-0 ${isDarkMode ? 'bg-gradient-to-r from-red-800 to-pink-800 hover:from-red-700 hover:to-pink-700 text-red-300' : 'bg-gradient-to-r from-red-100 to-pink-100 hover:from-red-200 hover:to-pink-200 text-red-700'} rounded-xl`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
   return (
     <Layout currentTime={currentTime}>
-      <div className="flex h-screen bg-gray-50">
+      <div className={`flex h-screen ${themeClasses.background}`}>
         {/* Main Content */}
         <div className="flex-1 flex flex-col">
           {/* Header */}
-          <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className={`${themeClasses.header} ${isDarkMode ? 'border-gray-600' : 'border-indigo-200'} px-8 py-8 text-white`}>
             <div className="flex items-center justify-between">
               <div>
-                <nav className="text-sm text-gray-500 mb-2">
+                <nav className={`${isDarkMode ? 'text-gray-400' : 'text-indigo-200'} mb-3 text-sm font-medium`}>
                   <span>Home / Inventory / Supplies</span>
                 </nav>
-                <h1 className="text-2xl font-bold text-gray-900">Supplies Management</h1>
+                <div className="flex items-center space-x-3">
+                  <Sparkles className="w-8 h-8 text-yellow-300" />
+                  <h1 className="text-4xl font-black">Supplies Management</h1>
+                </div>
+                <p className={`${isDarkMode ? 'text-gray-300' : 'text-indigo-100'} mt-2 text-lg font-medium`}>Manage your material inventory with style</p>
               </div>
               <div className="flex items-center space-x-4">
-                <Dialog open={showAddDialog} onOpenChange={(open) => {
-                  console.log('Dialog onOpenChange:', open);
-                  setShowAddDialog(open);
-                }}>
+                
+
+                <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
                   <DialogTrigger asChild>
-                    <Button onClick={() => {
-                      console.log('Add Supply button clicked');
-                      setShowAddDialog(true);
-                    }}>
-                      <Plus className="w-4 h-4 mr-2" />
+                    <Button className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold px-6 py-3 rounded-xl shadow-lg transform hover:scale-105 transition-all duration-200">
+                      <Plus className="w-5 h-5 mr-2" />
                       Add Supply
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="max-w-md">
+                  <DialogContent className={`max-w-lg max-h-[90vh] overflow-y-auto ${themeClasses.dialog} border-0 rounded-2xl shadow-2xl`}>
                     <DialogHeader>
-                      <DialogTitle>Add New Supply</DialogTitle>
+                      <DialogTitle className={`text-2xl font-bold ${isDarkMode ? 'bg-gradient-to-r from-indigo-400 to-purple-400' : 'bg-gradient-to-r from-indigo-600 to-purple-600'} bg-clip-text text-transparent`}>
+                        ✨ Add New Supply
+                      </DialogTitle>
                     </DialogHeader>
-                    <div className="space-y-4">
-                      {/* Debug info */}
-                      <div className="text-sm text-gray-500">
-                        Debug: Dialog opened successfully
-                      </div>
-                      
+                    <div className="space-y-6">
                       <div>
-                        <Label htmlFor="name">Name</Label>
+                        <Label htmlFor="name" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Material Name</Label>
                         <Input
                           id="name"
                           value={supplyForm.name}
                           onChange={(e) => setSupplyForm(prev => ({ ...prev, name: e.target.value }))}
-                          placeholder="Supply name"
+                          placeholder="Enter material name"
+                          className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
                         />
                       </div>
                       
-                      <div>
-                        <Label htmlFor="hexColor">Color</Label>
-                        <Input
-                          id="hexColor"
-                          type="color"
-                          value={supplyForm.hexColor}
-                          onChange={(e) => setSupplyForm(prev => ({ ...prev, hexColor: e.target.value }))}
-                        />
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="hexColor" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Color</Label>
+                          <Input
+                            id="hexColor"
+                            type="color"
+                            value={supplyForm.hexColor}
+                            onChange={(e) => setSupplyForm(prev => ({ ...prev, hexColor: e.target.value }))}
+                            className={`mt-2 h-12 border-2 ${themeClasses.input} rounded-xl`}
+                          />
+                        </div>
+                        
+                        <div>
+                          <Label htmlFor="pieceSize" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Piece Size</Label>
+                          <Select value={supplyForm.pieceSize} onValueChange={(value) => setSupplyForm(prev => ({ ...prev, pieceSize: value }))}>
+                            <SelectTrigger className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                              <SelectItem value="sheet">Sheet</SelectItem>
+                              <SelectItem value="piece">Piece</SelectItem>
+                              <SelectItem value="pair">Pair</SelectItem>
+                              <SelectItem value="roll">Roll</SelectItem>
+                              <SelectItem value="box">Box</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
                       
-                      <div>
-                        <Label htmlFor="pieceSize">Piece Size</Label>
-                        <Select value={supplyForm.pieceSize} onValueChange={(value) => setSupplyForm(prev => ({ ...prev, pieceSize: value }))}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="sheet">Sheet</SelectItem>
-                            <SelectItem value="piece">Piece</SelectItem>
-                            <SelectItem value="pair">Pair</SelectItem>
-                            <SelectItem value="roll">Roll</SelectItem>
-                            <SelectItem value="box">Box</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="quantityOnHand">Quantity on Hand</Label>
-                        <Input
-                          id="quantityOnHand"
-                          type="number"
-                          value={supplyForm.quantityOnHand}
-                          onChange={(e) => setSupplyForm(prev => ({ ...prev, quantityOnHand: parseInt(e.target.value) || 0 }))}
-                        />
-                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="quantityOnHand" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Quantity on Hand</Label>
+                          <Input
+                            id="quantityOnHand"
+                            type="number"
+                            min="0"
+                            value={supplyForm.quantityOnHand}
+                            onChange={(e) => setSupplyForm(prev => ({ ...prev, quantityOnHand: parseInt(e.target.value) || 0 }))}
+                            className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
+                          />
+                        </div>
 
-                      <div>
-                        <Label htmlFor="location">Location</Label>
-                        <Select value={supplyForm.locationId?.toString() || ""} onValueChange={(value) => setSupplyForm(prev => ({ ...prev, locationId: value ? parseInt(value) : undefined }))}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select location" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {locations.map((location: Location) => (
-                              <SelectItem key={location.id} value={location.id.toString()}>
-                                {location.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <div>
+                          <Label htmlFor="location" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Location</Label>
+                          <Select value={supplyForm.locationId?.toString() || ""} onValueChange={(value) => setSupplyForm(prev => ({ ...prev, locationId: value ? parseInt(value) : undefined }))}>
+                            <SelectTrigger className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}>
+                              <SelectValue placeholder="Select location" />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                              {locations.map((location: Location) => (
+                                <SelectItem key={location.id} value={location.id.toString()}>
+                                  {location.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
                       
                       <div>
-                        <Label htmlFor="defaultVendor">Default Vendor</Label>
+                        <Label htmlFor="defaultVendor" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Default Vendor</Label>
                         <Input
                           id="defaultVendor"
                           value={supplyForm.defaultVendor || ""}
                           onChange={(e) => setSupplyForm(prev => ({ ...prev, defaultVendor: e.target.value }))}
                           placeholder="Enter vendor name (optional)"
+                          className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
                         />
                       </div>
                       
                       <div>
-                        <Label htmlFor="defaultVendorPrice">Default Vendor Price ($)</Label>
+                        <Label htmlFor="defaultVendorPrice" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Default Vendor Price ($)</Label>
                         <Input
                           id="defaultVendorPrice"
                           type="number"
@@ -469,36 +823,48 @@ export default function Supplies() {
                             defaultVendorPrice: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : undefined 
                           }))}
                           placeholder="0.00"
+                          className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
                         />
                       </div>
                       
                       <div>
-                        <Label>Texture Image</Label>
-                        <div className="flex items-center space-x-2">
+                        <Label className={`text-sm font-bold ${themeClasses.textSecondary}`}>Texture Image</Label>
+                        <div className="flex items-center space-x-3 mt-2">
                           <Input
                             type="file"
                             accept="image/*"
                             onChange={(e) => handleFileUpload(e, false)}
+                            className={`border-2 ${themeClasses.input} rounded-xl`}
                           />
                           {supplyForm.texture && (
-                            <Button variant="outline" size="sm" onClick={() => clearTexture(false)}>
+                            <Button variant="outline" size="sm" onClick={() => clearTexture(false)} className="rounded-xl">
                               <X className="w-4 h-4" />
                             </Button>
                           )}
                         </div>
                         {supplyForm.texture && (
-                          <div className="mt-2">
-                            <img src={`/uploads/${supplyForm.texture}`} alt="Texture" className="w-16 h-16 object-cover rounded border" />
+                          <div className="mt-4 flex justify-center">
+                            <TextureSwatch
+                              texture={supplyForm.texture}
+                              hexColor={supplyForm.hexColor}
+                              name={supplyForm.name}
+                              size="lg"
+                              isDarkMode={isDarkMode}
+                            />
                           </div>
                         )}
                       </div>
                       
-                      <div className="flex justify-end space-x-2">
-                        <Button variant="outline" onClick={() => setShowAddDialog(false)}>
+                      <div className="flex justify-end space-x-3 pt-6">
+                        <Button variant="outline" onClick={() => setShowAddDialog(false)} className="rounded-xl">
                           Cancel
                         </Button>
-                        <Button onClick={handleAddSupply} disabled={createSupplyMutation.isPending}>
-                          {createSupplyMutation.isPending ? "Creating..." : "Create"}
+                        <Button 
+                          onClick={handleAddSupply} 
+                          disabled={createSupplyMutation.isPending}
+                          className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-xl"
+                        >
+                          {createSupplyMutation.isPending ? "Creating..." : "✨ Create Supply"}
                         </Button>
                       </div>
                     </div>
@@ -507,31 +873,38 @@ export default function Supplies() {
 
                 <Dialog open={showLocationDialog} onOpenChange={setShowLocationDialog}>
                   <DialogTrigger asChild>
-                    <Button variant="outline">
-                      <Plus className="w-4 h-4 mr-2" />
+                    <Button className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-bold px-6 py-3 rounded-xl shadow-lg transform hover:scale-105 transition-all duration-200">
+                      <Plus className="w-5 h-5 mr-2" />
                       Add Location
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="max-w-md">
+                  <DialogContent className={`max-w-md ${themeClasses.dialog} border-0 rounded-2xl shadow-2xl`}>
                     <DialogHeader>
-                      <DialogTitle>Add New Location</DialogTitle>
+                      <DialogTitle className={`text-2xl font-bold ${isDarkMode ? 'bg-gradient-to-r from-amber-400 to-orange-400' : 'bg-gradient-to-r from-amber-600 to-orange-600'} bg-clip-text text-transparent`}>
+                        📍 Add New Location
+                      </DialogTitle>
                     </DialogHeader>
-                    <div className="space-y-4">
+                    <div className="space-y-6">
                       <div>
-                        <Label htmlFor="locationName">Location Name</Label>
+                        <Label htmlFor="locationName" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Location Name</Label>
                         <Input
                           id="locationName"
                           value={newLocationName}
                           onChange={(e) => setNewLocationName(e.target.value)}
-                          placeholder="Location name"
+                          placeholder="Enter location name"
+                          className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
                         />
                       </div>
-                      <div className="flex justify-end space-x-2">
-                        <Button variant="outline" onClick={() => setShowLocationDialog(false)}>
+                      <div className="flex justify-end space-x-3">
+                        <Button variant="outline" onClick={() => setShowLocationDialog(false)} className="rounded-xl">
                           Cancel
                         </Button>
-                        <Button onClick={handleCreateLocation} disabled={createLocationMutation.isPending}>
-                          {createLocationMutation.isPending ? "Creating..." : "Create"}
+                        <Button 
+                          onClick={handleCreateLocation} 
+                          disabled={createLocationMutation.isPending}
+                          className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold rounded-xl"
+                        >
+                          {createLocationMutation.isPending ? "Creating..." : "✨ Create Location"}
                         </Button>
                       </div>
                     </div>
@@ -541,105 +914,87 @@ export default function Supplies() {
             </div>
           </div>
 
-          {/* Search Bar */}
-          <div className="bg-white border-b border-gray-200 px-6 py-4">
-            <div className="flex items-center space-x-4">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          {/* Search and Controls */}
+          <div className={`${themeClasses.searchBar} backdrop-blur-sm border-b ${themeClasses.border} px-8 py-6`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-6 flex-1">
+                <div className="relative max-w-lg flex-1">
+                  <Search className={`absolute left-4 top-1/2 transform -translate-y-1/2 ${isDarkMode ? 'text-gray-400' : 'text-gray-400'} w-5 h-5`} />
                   <Input
                     placeholder="Search supplies..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
+                    className={`pl-12 py-3 border-2 ${themeClasses.input} rounded-xl shadow-sm text-lg`}
                   />
+                </div>
+                <div className={`flex items-center space-x-2 text-sm font-medium ${themeClasses.textSecondary} ${isDarkMode ? 'bg-gradient-to-r from-gray-700 to-gray-600' : 'bg-gradient-to-r from-gray-100 to-gray-200'} px-4 py-2 rounded-xl`}>
+                  <Palette className="w-4 h-4" />
+                  <span>{filteredSupplies.length} of {supplies.length} supplies</span>
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-3">
+                <div className={`flex ${isDarkMode ? 'bg-gradient-to-r from-gray-700 to-gray-600' : 'bg-gradient-to-r from-gray-100 to-gray-200'} rounded-xl p-1`}>
+                  <Button
+                    variant={viewMode === "card" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setViewMode("card")}
+                    className={`${viewMode === "card" ? `${isDarkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg ${isDarkMode ? 'text-indigo-400' : 'text-indigo-700'} font-bold` : `${themeClasses.textSecondary}`} rounded-xl`}
+                  >
+                    <LayoutGrid className="w-4 h-4 mr-2" />
+                    Cards
+                  </Button>
+                  <Button
+                    variant={viewMode === "table" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setViewMode("table")}
+                    className={`${viewMode === "table" ? `${isDarkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg ${isDarkMode ? 'text-indigo-400' : 'text-indigo-700'} font-bold` : `${themeClasses.textSecondary}`} rounded-xl`}
+                  >
+                    <TableIcon className="w-4 h-4 mr-2" />
+                    Table
+                  </Button>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Supplies List */}
-          <div className="flex-1 overflow-auto p-6">
+          {/* Content */}
+          <div className="flex-1 overflow-auto p-8">
             {suppliesLoading ? (
               <div className="flex items-center justify-center h-64">
-                <div className="text-gray-500">Loading supplies...</div>
+                <div className="text-center">
+                  <div className={`w-16 h-16 ${isDarkMode ? 'bg-gradient-to-r from-indigo-400 to-purple-500' : 'bg-gradient-to-r from-indigo-500 to-purple-600'} rounded-full animate-pulse mx-auto mb-4`}></div>
+                  <div className={`text-lg font-medium ${themeClasses.textSecondary}`}>Loading supplies...</div>
+                </div>
               </div>
-            ) : (
-              <div className="grid gap-4">
-                {filteredSupplies.map((supply: Supply) => (
-                  <Card key={supply.id} className="hover:shadow-md transition-shadow">
-                    <CardContent className="p-6">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
-                          <TextureSwatch
-                            texture={supply.texture ? `/uploads/${supply.texture}` : null}
-                            hexColor={supply.hexColor}
-                            name={supply.name}
-                            size="lg"
-                          />
-                          <div>
-                            <h3 className="text-lg font-semibold">{supply.name}</h3>
-                            <div className="flex items-center space-x-4 text-sm text-gray-600">
-                              <span>Piece Size: {supply.pieceSize}</span>
-                              <span>Location: {supply.location?.name || "None"}</span>
-                            </div>
-                            <div className="flex items-center space-x-4 text-sm mt-1">
-                              <Badge variant="outline">On Hand: {supply.quantityOnHand}</Badge>
-                              <Badge variant="outline">Available: {supply.available}</Badge>
-                              <Badge variant="outline">Allocated: {supply.allocated}</Badge>
-                              <Badge variant="outline">Used: {supply.used}</Badge>
-
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openEditDialog(supply)}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setSupplyToDelete(supply)}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Supply</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Are you sure you want to delete "{supply.name}"? This action cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel onClick={() => setSupplyToDelete(null)}>
-                                  Cancel
-                                </AlertDialogCancel>
-                                <AlertDialogAction onClick={handleDeleteSupply}>
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-                {filteredSupplies.length === 0 && !suppliesLoading && (
-                  <div className="text-center py-12">
-                    <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No supplies found</h3>
-                    <p className="text-gray-500">Get started by adding your first supply.</p>
-                  </div>
+            ) : filteredSupplies.length === 0 ? (
+              <div className="text-center py-20">
+                <div className={`w-24 h-24 ${isDarkMode ? 'bg-gradient-to-r from-indigo-800 to-purple-800' : 'bg-gradient-to-r from-indigo-100 to-purple-100'} rounded-full flex items-center justify-center mx-auto mb-6`}>
+                  <Package className={`w-12 h-12 ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`} />
+                </div>
+                <h3 className={`text-2xl font-bold ${themeClasses.text} mb-3`}>
+                  {searchTerm ? "🔍 No supplies found" : "🎨 No supplies yet"}
+                </h3>
+                <p className={`${themeClasses.textSecondary} mb-6 text-lg`}>
+                  {searchTerm 
+                    ? `No supplies match "${searchTerm}". Try adjusting your search.`
+                    : "Get started by adding your first supply to the inventory."
+                  }
+                </p>
+                {!searchTerm && (
+                  <Button 
+                    onClick={() => setShowAddDialog(true)} 
+                    className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold px-8 py-4 rounded-xl text-lg shadow-lg transform hover:scale-105 transition-all duration-200"
+                  >
+                    <Plus className="w-5 h-5 mr-2" />
+                    ✨ Add Your First Supply
+                  </Button>
                 )}
               </div>
+            ) : (
+              <>
+                {viewMode === "card" ? <CardView /> : <TableView />}
+              </>
             )}
           </div>
         </div>
@@ -647,80 +1002,96 @@ export default function Supplies() {
 
       {/* Edit Supply Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className={`max-w-lg max-h-[90vh] overflow-y-auto ${themeClasses.dialog} border-0 rounded-2xl shadow-2xl`}>
           <DialogHeader>
-            <DialogTitle>Edit Supply</DialogTitle>
+            <DialogTitle className={`text-2xl font-bold ${isDarkMode ? 'bg-gradient-to-r from-indigo-400 to-purple-400' : 'bg-gradient-to-r from-indigo-600 to-purple-600'} bg-clip-text text-transparent`}>
+              ✏️ Edit Supply
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div>
-              <Label htmlFor="editName">Name</Label>
+              <Label htmlFor="editName" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Material Name</Label>
               <Input
                 id="editName"
                 value={editSupplyForm.name}
                 onChange={(e) => setEditSupplyForm(prev => ({ ...prev, name: e.target.value }))}
                 placeholder="Supply name"
+                className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
               />
             </div>
-            <div>
-              <Label htmlFor="editHexColor">Color</Label>
-              <Input
-                id="editHexColor"
-                type="color"
-                value={editSupplyForm.hexColor}
-                onChange={(e) => setEditSupplyForm(prev => ({ ...prev, hexColor: e.target.value }))}
-              />
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="editHexColor" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Color</Label>
+                <Input
+                  id="editHexColor"
+                  type="color"
+                  value={editSupplyForm.hexColor}
+                  onChange={(e) => setEditSupplyForm(prev => ({ ...prev, hexColor: e.target.value }))}
+                  className={`mt-2 h-12 border-2 ${themeClasses.input} rounded-xl`}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="editPieceSize" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Piece Size</Label>
+                <Select value={editSupplyForm.pieceSize} onValueChange={(value) => setEditSupplyForm(prev => ({ ...prev, pieceSize: value }))}>
+                  <SelectTrigger className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="sheet">Sheet</SelectItem>
+                    <SelectItem value="piece">Piece</SelectItem>
+                    <SelectItem value="pair">Pair</SelectItem>
+                    <SelectItem value="roll">Roll</SelectItem>
+                    <SelectItem value="box">Box</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div>
-              <Label htmlFor="editPieceSize">Piece Size</Label>
-              <Select value={editSupplyForm.pieceSize} onValueChange={(value) => setEditSupplyForm(prev => ({ ...prev, pieceSize: value }))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="sheet">Sheet</SelectItem>
-                  <SelectItem value="piece">Piece</SelectItem>
-                  <SelectItem value="pair">Pair</SelectItem>
-                  <SelectItem value="roll">Roll</SelectItem>
-                  <SelectItem value="box">Box</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="editQuantityOnHand">Quantity on Hand</Label>
-              <Input
-                id="editQuantityOnHand"
-                type="number"
-                value={editSupplyForm.quantityOnHand}
-                onChange={(e) => setEditSupplyForm(prev => ({ ...prev, quantityOnHand: parseInt(e.target.value) || 0 }))}
-              />
-            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="editQuantityOnHand" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Quantity on Hand</Label>
+                <Input
+                  id="editQuantityOnHand"
+                  type="number"
+                  min="0"
+                  value={editSupplyForm.quantityOnHand}
+                  onChange={(e) => setEditSupplyForm(prev => ({ ...prev, quantityOnHand: parseInt(e.target.value) || 0 }))}
+                  className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
+                />
+              </div>
 
-            <div>
-              <Label htmlFor="editLocation">Location</Label>
-              <Select value={editSupplyForm.locationId?.toString() || ""} onValueChange={(value) => setEditSupplyForm(prev => ({ ...prev, locationId: value ? parseInt(value) : undefined }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select location" />
-                </SelectTrigger>
-                <SelectContent>
-                  {locations.map((location: Location) => (
-                    <SelectItem key={location.id} value={location.id.toString()}>
-                      {location.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div>
+                <Label htmlFor="editLocation" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Location</Label>
+                <Select value={editSupplyForm.locationId?.toString() || ""} onValueChange={(value) => setEditSupplyForm(prev => ({ ...prev, locationId: value ? parseInt(value) : undefined }))}>
+                  <SelectTrigger className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}>
+                    <SelectValue placeholder="Select location" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    {locations.map((location: Location) => (
+                      <SelectItem key={location.id} value={location.id.toString()}>
+                        {location.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+            
             <div>
-              <Label htmlFor="editDefaultVendor">Default Vendor</Label>
-                                      <Input
-                          id="editDefaultVendor"
-                          value={editSupplyForm.defaultVendor || ""}
-                          onChange={(e) => setEditSupplyForm(prev => ({ ...prev, defaultVendor: e.target.value }))}
-                          placeholder="Enter vendor name (optional)"
-                        />
+              <Label htmlFor="editDefaultVendor" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Default Vendor</Label>
+              <Input
+                id="editDefaultVendor"
+                value={editSupplyForm.defaultVendor || ""}
+                onChange={(e) => setEditSupplyForm(prev => ({ ...prev, defaultVendor: e.target.value }))}
+                placeholder="Enter vendor name (optional)"
+                className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
+              />
             </div>
+            
             <div>
-              <Label htmlFor="editDefaultVendorPrice">Default Vendor Price ($)</Label>
+              <Label htmlFor="editDefaultVendorPrice" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Default Vendor Price ($)</Label>
               <Input
                 id="editDefaultVendorPrice"
                 type="number"
@@ -732,39 +1103,78 @@ export default function Supplies() {
                   defaultVendorPrice: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : undefined 
                 }))}
                 placeholder="0.00"
+                className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
               />
             </div>
+            
             <div>
-              <Label>Texture Image</Label>
-              <div className="flex items-center space-x-2">
+              <Label className={`text-sm font-bold ${themeClasses.textSecondary}`}>Texture Image</Label>
+              <div className="flex items-center space-x-3 mt-2">
                 <Input
                   type="file"
                   accept="image/*"
                   onChange={(e) => handleFileUpload(e, true)}
+                  className={`border-2 ${themeClasses.input} rounded-xl`}
                 />
                 {editSupplyForm.texture && (
-                  <Button variant="outline" size="sm" onClick={() => clearTexture(true)}>
+                  <Button variant="outline" size="sm" onClick={() => clearTexture(true)} className="rounded-xl">
                     <X className="w-4 h-4" />
                   </Button>
                 )}
               </div>
               {editSupplyForm.texture && (
-                <div className="mt-2">
-                  <img src={`/uploads/${editSupplyForm.texture}`} alt="Texture" className="w-16 h-16 object-cover rounded border" />
+                <div className="mt-4 flex justify-center">
+                  <TextureSwatch
+                    texture={editSupplyForm.texture}
+                    hexColor={editSupplyForm.hexColor}
+                    name={editSupplyForm.name}
+                    size="lg"
+                    isDarkMode={isDarkMode}
+                  />
                 </div>
               )}
             </div>
-            <div className="flex justify-end space-x-2">
-              <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+            
+            <div className="flex justify-end space-x-3 pt-6">
+              <Button variant="outline" onClick={() => setShowEditDialog(false)} className="rounded-xl">
                 Cancel
               </Button>
-              <Button onClick={handleEditSupply} disabled={updateSupplyMutation.isPending}>
-                {updateSupplyMutation.isPending ? "Updating..." : "Update"}
+              <Button 
+                onClick={handleEditSupply} 
+                disabled={updateSupplyMutation.isPending}
+                className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-xl"
+              >
+                {updateSupplyMutation.isPending ? "Updating..." : "✨ Update Supply"}
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!supplyToDelete} onOpenChange={() => setSupplyToDelete(null)}>
+        <AlertDialogContent className={`${isDarkMode ? 'bg-gradient-to-br from-gray-800 to-red-900' : 'bg-gradient-to-br from-white to-red-50'} border-0 rounded-2xl shadow-2xl`}>
+          <AlertDialogHeader>
+            <AlertDialogTitle className={`text-2xl font-bold ${isDarkMode ? 'text-red-400' : 'text-red-700'}`}>
+              🗑️ Delete Supply
+            </AlertDialogTitle>
+            <AlertDialogDescription className={`${isDarkMode ? 'text-gray-300' : 'text-gray-700'} text-lg`}>
+              Are you sure you want to delete <span className={`font-bold ${isDarkMode ? 'text-red-400' : 'text-red-700'}`}>"{supplyToDelete?.name}"</span>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setSupplyToDelete(null)} className="rounded-xl">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteSupply}
+              className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold rounded-xl"
+            >
+              🗑️ Delete Forever
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   );
-} 
+}
