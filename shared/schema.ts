@@ -35,18 +35,37 @@ export const supplies = pgTable("supplies", {
   name: text("name").notNull(),
   hexColor: text("hex_color").notNull(),
   pieceSize: text("piece_size").notNull().default("sheet"), // sheet, piece, pair, etc.
-  quantityOnHand: integer("quantity_on_hand").notNull().default(0), // physical stock
-  needed: integer("needed").notNull().default(0), // quantity needed for purchase orders
-  available: integer("available").notNull().default(0), // not allocated
-  allocated: integer("allocated").notNull().default(0), // predicted need
-  used: integer("used").notNull().default(0), // actual usage
-  locationId: integer("location_id").references(() => locations.id),
-            vendorId: integer("vendor_id").references(() => vendors.id), // Vendor ID reference
-          defaultVendor: text("default_vendor"), // Default vendor name for this supply
-          defaultVendorPrice: integer("default_vendor_price"), // Default price from vendor in cents
+  partNumber: text("part_number"), // Optional part number
+  description: text("description"), // Multi-line description
+  availableInCatalog: boolean("available_in_catalog").default(false), // Available in catalog
+  retailPrice: integer("retail_price").default(0), // Default selling price in cents
+  imageUrl: text("image_url"), // URL or path to uploaded image
   texture: text("texture"), // URL or path to texture image
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Supply-Vendor linking table (many-to-many)
+export const supplyVendors = pgTable("supply_vendors", {
+  id: serial("id").primaryKey(),
+  supplyId: integer("supply_id").references(() => supplies.id).notNull(),
+  vendorId: integer("vendor_id").references(() => vendors.id).notNull(),
+  vendorPartNumber: text("vendor_part_number"), // Vendor's specific part number
+  price: integer("price").notNull().default(0), // Price from this vendor in cents
+  isPreferred: boolean("is_preferred").default(false), // Preferred vendor selection
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Supply-Location linking table (many-to-many)
+export const supplyLocations = pgTable("supply_locations", {
+  id: serial("id").primaryKey(),
+  supplyId: integer("supply_id").references(() => supplies.id).notNull(),
+  locationId: integer("location_id").references(() => locations.id).notNull(),
+  onHandQuantity: integer("on_hand_quantity").notNull().default(0), // Current stock at location
+  minimumQuantity: integer("minimum_quantity").notNull().default(0), // Reorder threshold
+  orderGroupSize: integer("order_group_size").notNull().default(1), // Order in groups of
+  allocationStatus: boolean("allocation_status").default(false), // Allocation priority
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // Supply transactions for tracking usage
@@ -64,7 +83,7 @@ export const supplyTransactions = pgTable("supply_transactions", {
 // Vendors table
 export const vendors = pgTable("vendors", {
   id: serial("id").primaryKey(),
-  name: text("name").notNull(),
+  company: text("company").notNull(), // Company name field
   contactInfo: text("contact_info"),
   address: text("address"),
   phone: text("phone"),
@@ -260,12 +279,32 @@ export const locationsRelations = relations(locations, ({ many }) => ({
   supplies: many(supplies),
 }));
 
-export const suppliesRelations = relations(supplies, ({ one, many }) => ({
+export const suppliesRelations = relations(supplies, ({ many }) => ({
+  supplyVendors: many(supplyVendors),
+  supplyLocations: many(supplyLocations),
+  transactions: many(supplyTransactions),
+}));
+
+export const supplyVendorsRelations = relations(supplyVendors, ({ one }) => ({
+  supply: one(supplies, {
+    fields: [supplyVendors.supplyId],
+    references: [supplies.id],
+  }),
+  vendor: one(vendors, {
+    fields: [supplyVendors.vendorId],
+    references: [vendors.id],
+  }),
+}));
+
+export const supplyLocationsRelations = relations(supplyLocations, ({ one }) => ({
+  supply: one(supplies, {
+    fields: [supplyLocations.supplyId],
+    references: [supplies.id],
+  }),
   location: one(locations, {
-    fields: [supplies.locationId],
+    fields: [supplyLocations.locationId],
     references: [locations.id],
   }),
-  transactions: many(supplyTransactions),
 }));
 
 export const supplyTransactionsRelations = relations(supplyTransactions, ({ one }) => ({
@@ -375,6 +414,35 @@ export const insertSupplySchema = createInsertSchema(supplies).omit({
   updatedAt: true,
 });
 
+// Extended schema for supply creation/update with vendor and location relationships
+export const insertSupplyWithRelationsSchema = insertSupplySchema.extend({
+  vendors: z.array(z.object({
+    id: z.number().optional(),
+    vendorId: z.number().optional(),
+    vendorPartNumber: z.string().optional(),
+    price: z.number().optional(),
+    isPreferred: z.boolean().optional(),
+  })).optional(),
+  locations: z.array(z.object({
+    id: z.number().optional(),
+    locationId: z.number().optional(),
+    onHandQuantity: z.number().optional(),
+    minimumQuantity: z.number().optional(),
+    orderGroupSize: z.number().optional(),
+    allocationStatus: z.boolean().optional(),
+  })).optional(),
+});
+
+export const insertSupplyVendorSchema = createInsertSchema(supplyVendors).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertSupplyLocationSchema = createInsertSchema(supplyLocations).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertSupplyTransactionSchema = createInsertSchema(supplyTransactions).omit({
   id: true,
   createdAt: true,
@@ -471,6 +539,10 @@ export type Location = typeof locations.$inferSelect;
 export type InsertLocation = z.infer<typeof insertLocationSchema>;
 export type Supply = typeof supplies.$inferSelect;
 export type InsertSupply = z.infer<typeof insertSupplySchema>;
+export type SupplyVendor = typeof supplyVendors.$inferSelect;
+export type InsertSupplyVendor = z.infer<typeof insertSupplyVendorSchema>;
+export type SupplyLocation = typeof supplyLocations.$inferSelect;
+export type InsertSupplyLocation = z.infer<typeof insertSupplyLocationSchema>;
 export type SupplyTransaction = typeof supplyTransactions.$inferSelect;
 export type InsertSupplyTransaction = z.infer<typeof insertSupplyTransactionSchema>;
 
@@ -479,7 +551,12 @@ export type SupplyWithLocation = Supply & {
 };
 
 // Purchase order types
-export type Vendor = typeof vendors.$inferSelect;
+export type Vendor = {
+  id: number;
+  company: string;
+  contactInfo: string | null;
+  createdAt: Date;
+};
 export type InsertVendor = z.infer<typeof insertVendorSchema>;
 export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
 export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>;

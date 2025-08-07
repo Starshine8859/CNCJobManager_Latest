@@ -9,7 +9,7 @@ import path from "path";
 import fs from "fs";
 
 import { storage } from "./storage";
-import { createJobSchema, loginSchema, insertUserSchema, insertColorSchema, insertColorGroupSchema, insertSupplySchema, insertLocationSchema, insertVendorSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema } from "@shared/schema";
+import { createJobSchema, loginSchema, insertUserSchema, insertColorSchema, insertColorGroupSchema, insertSupplySchema, insertSupplyWithRelationsSchema, insertLocationSchema, insertVendorSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema } from "@shared/schema";
 import { pool } from "./db";
 import "./types";
 
@@ -571,7 +571,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: supply.id,
         name: supply.name,
         hexColor: supply.hexColor,
-        groupId: supply.locationId,
+        groupId: supply.location?.id || null,
         texture: supply.texture,
         createdAt: supply.createdAt,
         updatedAt: supply.updatedAt,
@@ -604,7 +604,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: supply.id,
         name: supply.name,
         hexColor: supply.hexColor,
-        groupId: supply.locationId,
+        groupId: null, // New supplies don't have location until added to supply_locations
         texture: supply.texture,
         createdAt: supply.createdAt,
         updatedAt: supply.updatedAt
@@ -705,10 +705,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/supplies/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const supply = await storage.getSupply(id);
+      if (!supply) {
+        return res.status(404).json({ message: "Supply not found" });
+      }
+      res.json(supply);
+    } catch (error) {
+      console.error('Get supply error:', error);
+      res.status(500).json({ message: "Failed to fetch supply" });
+    }
+  });
+
   app.post("/api/supplies", requireAuth, async (req, res) => {
     try {
       console.log('Creating supply with data:', req.body);
-      const supplyData = insertSupplySchema.parse(req.body);
+      const supplyData = insertSupplyWithRelationsSchema.parse(req.body);
       const supply = await storage.createSupply(supplyData);
       res.json(supply);
     } catch (error) {
@@ -720,12 +734,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/supplies/:id", requireAuth, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      console.log('Updating supply', id, 'with data:', req.body);
-      const supplyData = insertSupplySchema.partial().parse(req.body);
+      console.log('=== UPDATE SUPPLY REQUEST ===');
+      console.log('Supply ID:', id);
+      console.log('Request body:', JSON.stringify(req.body, null, 2));
+      console.log('User session:', req.session.user);
+      
+      const supplyData = insertSupplyWithRelationsSchema.partial().parse(req.body);
+      console.log('Parsed supply data:', JSON.stringify(supplyData, null, 2));
+      
+      console.log('Calling storage.updateSupply...');
       await storage.updateSupply(id, supplyData);
+      console.log('Storage.updateSupply completed successfully');
+      
+      console.log('Sending success response...');
       res.json({ message: "Supply updated successfully" });
+      console.log('=== UPDATE SUPPLY COMPLETED ===');
     } catch (error) {
-      console.error('Update supply error:', error);
+      console.error('=== UPDATE SUPPLY ERROR ===');
+      console.error('Error type:', error.constructor.name);
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+      console.error('=== END ERROR ===');
       res.status(400).json({ message: "Invalid supply data", error: error instanceof Error ? error.message : String(error) });
     }
   });

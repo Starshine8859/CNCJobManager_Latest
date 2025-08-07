@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -17,25 +19,33 @@ interface Supply {
   name: string;
   hexColor: string;
   pieceSize: string;
-  quantityOnHand: number;
-  available: number;
-  allocated: number;
-  used: number;
-  location: {
-    id: number;
-    name: string;
-  } | null;
-  vendorId?: number;
-  defaultVendor?: string;
-  defaultVendorPrice?: number;
+  partNumber?: string;
+  description?: string;
+  availableInCatalog?: boolean;
+  retailPrice?: number;
+  imageUrl?: string | null;
   texture: string | null;
   createdAt: string;
   updatedAt: string;
+  // For backward compatibility with existing data
+  location?: {
+    id: number;
+    name: string;
+  } | null;
+  defaultVendor?: string;
+  defaultVendorPrice?: number;
 }
 
 interface Location {
   id: number;
   name: string;
+}
+
+interface Vendor {
+  id: number;
+  company: string;
+  contactInfo?: string;
+  createdAt: string;
 }
 
 // Enhanced TextureSwatch component with black letter fallback
@@ -147,11 +157,33 @@ export default function Supplies() {
     name: "",
     hexColor: "#6366f1",
     pieceSize: "sheet",
-    quantityOnHand: 0,
+    partNumber: "",
+    description: "",
+    availableInCatalog: false,
+    retailPrice: 0,
+    imageUrl: null as string | null,
+    texture: null as string | null,
+    // Vendor relationships
+    vendors: [
+      {
+        id: 0,
+        vendorId: undefined as number | undefined,
+        vendorPartNumber: "Retail Price",
+        price: 0,
+        isPreferred: true
+      }
+    ],
+    // Location relationships
+    locations: [
+      {
+        id: 0,
     locationId: undefined as number | undefined,
-    defaultVendor: "",
-    defaultVendorPrice: undefined as number | undefined,
-    texture: null as string | null
+        onHandQuantity: 0,
+        minimumQuantity: 0,
+        orderGroupSize: 1,
+        allocationStatus: false
+      }
+    ]
   });
 
   // Form states for edit supply
@@ -159,11 +191,33 @@ export default function Supplies() {
     name: "",
     hexColor: "#6366f1",
     pieceSize: "sheet",
-    quantityOnHand: 0,
+    partNumber: "",
+    description: "",
+    availableInCatalog: false,
+    retailPrice: 0,
+    imageUrl: null as string | null,
+    texture: null as string | null,
+    // Vendor relationships
+    vendors: [
+      {
+        id: 0,
+        vendorId: undefined as number | undefined,
+        vendorPartNumber: "Retail Price",
+        price: 0,
+        isPreferred: true
+      }
+    ],
+    // Location relationships
+    locations: [
+      {
+        id: 0,
     locationId: undefined as number | undefined,
-    defaultVendor: "",
-    defaultVendorPrice: undefined as number | undefined,
-    texture: null as string | null
+        onHandQuantity: 0,
+        minimumQuantity: 0,
+        orderGroupSize: 1,
+        allocationStatus: false
+      }
+    ]
   });
 
   // Load dark mode preference from localStorage
@@ -184,7 +238,9 @@ export default function Supplies() {
     queryKey: ["supplies", searchTerm],
     queryFn: async () => {
       const params = searchTerm ? `?search=${encodeURIComponent(searchTerm)}` : "";
-      const response = await fetch(`/api/supplies${params}`);
+      const response = await fetch(`/api/supplies${params}`, {
+        credentials: "include"
+      });
       if (!response.ok) throw new Error("Failed to fetch supplies");
       return response.json();
     }
@@ -194,21 +250,24 @@ export default function Supplies() {
   const { data: locations = [], isLoading: locationsLoading } = useQuery({
     queryKey: ["locations"],
     queryFn: async () => {
-      const response = await fetch("/api/locations");
+      const response = await fetch("/api/locations", {
+        credentials: "include"
+      });
       if (!response.ok) throw new Error("Failed to fetch locations");
       return response.json();
     }
   });
 
-  // Fetch vendors - temporarily disabled to fix blue screen
+  // Fetch vendors
   const { data: vendors = [], isLoading: vendorsLoading, error: vendorsError } = useQuery({
     queryKey: ["vendors"],
     queryFn: async () => {
-      // Temporarily return empty array to prevent blue screen
-      console.log('Vendors query disabled - returning empty array');
-      return [];
-    },
-    retry: false
+      const response = await fetch("/api/vendors", {
+        credentials: "include"
+      });
+      if (!response.ok) throw new Error("Failed to fetch vendors");
+      return response.json();
+    }
   });
 
   // Create supply mutation
@@ -217,6 +276,7 @@ export default function Supplies() {
       const response = await fetch("/api/supplies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(supplyData)
       });
       if (!response.ok) throw new Error("Failed to create supply");
@@ -243,13 +303,37 @@ export default function Supplies() {
   // Update supply mutation
   const updateSupplyMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      console.log('Updating supply with ID:', id, 'Data:', data);
+      
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      try {
       const response = await fetch(`/api/supplies/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
-      });
-      if (!response.ok) throw new Error("Failed to update supply");
+          credentials: "include",
+          body: JSON.stringify(data),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        console.log('Update response status:', response.status);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Update error:', errorText);
+          throw new Error(`Failed to update supply: ${response.status} ${errorText}`);
+        }
       return response.json();
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          throw new Error('Request timed out after 10 seconds');
+        }
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["supplies"] });
@@ -262,6 +346,7 @@ export default function Supplies() {
       });
     },
     onError: (error) => {
+      console.error('Update supply mutation error:', error);
       toast({
         title: "❌ Error",
         description: error.message,
@@ -274,7 +359,8 @@ export default function Supplies() {
   const deleteSupplyMutation = useMutation({
     mutationFn: async (id: number) => {
       const response = await fetch(`/api/supplies/${id}`, {
-        method: "DELETE"
+        method: "DELETE",
+        credentials: "include"
       });
       if (!response.ok) throw new Error("Failed to delete supply");
       return response.json();
@@ -302,6 +388,7 @@ export default function Supplies() {
       const response = await fetch("/api/locations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ name })
       });
       if (!response.ok) throw new Error("Failed to create location");
@@ -332,6 +419,7 @@ export default function Supplies() {
       formData.append("texture", file);
       const response = await fetch("/api/upload-texture", {
         method: "POST",
+        credentials: "include",
         body: formData
       });
       if (!response.ok) throw new Error("Failed to upload texture");
@@ -360,11 +448,31 @@ export default function Supplies() {
       name: "",
       hexColor: "#6366f1",
       pieceSize: "sheet",
-      quantityOnHand: 0,
+      partNumber: "",
+      description: "",
+      availableInCatalog: false,
+      retailPrice: 0,
+      imageUrl: null,
+      texture: null,
+      vendors: [
+        {
+          id: 0,
+          vendorId: undefined,
+          vendorPartNumber: "Retail Price",
+          price: 0,
+          isPreferred: true
+        }
+      ],
+      locations: [
+        {
+          id: 0,
       locationId: undefined,
-      defaultVendor: "",
-      defaultVendorPrice: undefined,
-      texture: null
+          onHandQuantity: 0,
+          minimumQuantity: 0,
+          orderGroupSize: 1,
+          allocationStatus: false
+        }
+      ]
     });
   };
 
@@ -373,24 +481,95 @@ export default function Supplies() {
       name: "",
       hexColor: "#6366f1",
       pieceSize: "sheet",
-      quantityOnHand: 0,
+      partNumber: "",
+      description: "",
+      availableInCatalog: false,
+      retailPrice: 0,
+      imageUrl: null,
+      texture: null,
+      vendors: [
+        {
+          id: 0,
+          vendorId: undefined,
+          vendorPartNumber: "Retail Price",
+          price: 0,
+          isPreferred: true
+        }
+      ],
+      locations: [
+        {
+          id: 0,
       locationId: undefined,
-      defaultVendor: "",
-      defaultVendorPrice: undefined,
-      texture: null
+          onHandQuantity: 0,
+          minimumQuantity: 0,
+          orderGroupSize: 1,
+          allocationStatus: false
+        }
+      ]
     });
   };
 
   const handleAddSupply = () => {
     console.log('Submitting supply form:', supplyForm);
-    createSupplyMutation.mutate(supplyForm);
+    
+    // Prepare the supply data with vendor and location relationships
+    const supplyData = {
+      // Basic supply data
+      name: supplyForm.name,
+      hexColor: supplyForm.hexColor,
+      pieceSize: supplyForm.pieceSize,
+      partNumber: supplyForm.partNumber,
+      description: supplyForm.description,
+      availableInCatalog: supplyForm.availableInCatalog,
+      retailPrice: supplyForm.retailPrice,
+      imageUrl: supplyForm.imageUrl,
+      texture: supplyForm.texture,
+      
+      // Vendor relationships (filter out the first default row and empty entries)
+      vendors: supplyForm.vendors.slice(1).filter(v => v.vendorId && v.vendorId > 0),
+      
+      // Location relationships (filter out the first default row and empty entries)
+      locations: supplyForm.locations.slice(1).filter(l => l.locationId && l.locationId > 0)
+    };
+    
+    createSupplyMutation.mutate(supplyData);
   };
 
   const handleEditSupply = () => {
     if (!editingSupply) return;
+    
+    console.log('Submitting edit supply form:', editSupplyForm);
+    
+    // Prepare the supply data with vendor and location relationships
+    const supplyData = {
+      // Basic supply data
+      name: editSupplyForm.name,
+      hexColor: editSupplyForm.hexColor,
+      pieceSize: editSupplyForm.pieceSize,
+      partNumber: editSupplyForm.partNumber,
+      description: editSupplyForm.description,
+      availableInCatalog: editSupplyForm.availableInCatalog,
+      retailPrice: editSupplyForm.retailPrice,
+      imageUrl: editSupplyForm.imageUrl,
+      texture: editSupplyForm.texture,
+      
+      // Vendor relationships (filter out the first default row and empty entries)
+      vendors: editSupplyForm.vendors.slice(1).filter(v => v.vendorId && v.vendorId > 0),
+      
+      // Location relationships (filter out the first default row and empty entries)
+      locations: editSupplyForm.locations.slice(1).filter(l => l.locationId && l.locationId > 0)
+    };
+    
+    console.log('Prepared supply data for update:', supplyData);
+    console.log('Editing supply ID:', editingSupply.id);
+    console.log('Raw vendors before filtering:', editSupplyForm.vendors);
+    console.log('Raw locations before filtering:', editSupplyForm.locations);
+    console.log('Filtered vendors:', supplyData.vendors);
+    console.log('Filtered locations:', supplyData.locations);
+    
     updateSupplyMutation.mutate({
       id: editingSupply.id,
-      data: editSupplyForm
+      data: supplyData
     });
   };
 
@@ -419,19 +598,243 @@ export default function Supplies() {
     }
   };
 
-  const openEditDialog = (supply: Supply) => {
+  // Vendor management functions
+  const addVendor = (isEdit = false) => {
+    const newVendor = {
+      id: Date.now(),
+      vendorId: undefined as number | undefined,
+      vendorPartNumber: "",
+      price: 0,
+      isPreferred: false
+    };
+    
+    if (isEdit) {
+      setEditSupplyForm(prev => ({
+        ...prev,
+        vendors: [...prev.vendors, newVendor]
+      }));
+    } else {
+      setSupplyForm(prev => ({
+        ...prev,
+        vendors: [...prev.vendors, newVendor]
+      }));
+    }
+  };
+
+  const removeVendor = (vendorId: number, isEdit = false) => {
+    if (isEdit) {
+      setEditSupplyForm(prev => ({
+        ...prev,
+        vendors: prev.vendors.filter(v => v.id !== vendorId)
+      }));
+    } else {
+      setSupplyForm(prev => ({
+        ...prev,
+        vendors: prev.vendors.filter(v => v.id !== vendorId)
+      }));
+    }
+  };
+
+  const updateVendor = (vendorId: number, field: string, value: any, isEdit = false) => {
+    console.log(`Updating vendor ${vendorId}, field: ${field}, value:`, value, 'isEdit:', isEdit);
+    if (isEdit) {
+      setEditSupplyForm(prev => {
+        const updated = {
+          ...prev,
+          vendors: prev.vendors.map(v => 
+            v.id === vendorId ? { ...v, [field]: value } : v
+          )
+        };
+        console.log('Updated editSupplyForm vendors:', updated.vendors);
+        return updated;
+      });
+    } else {
+      setSupplyForm(prev => {
+        const updated = {
+          ...prev,
+          vendors: prev.vendors.map(v => 
+            v.id === vendorId ? { ...v, [field]: value } : v
+          )
+        };
+        console.log('Updated supplyForm vendors:', updated.vendors);
+        return updated;
+      });
+    }
+  };
+
+  // Location management functions
+  const addLocation = (isEdit = false) => {
+    const newLocation = {
+      id: Date.now(),
+      locationId: undefined as number | undefined,
+      onHandQuantity: 0,
+      minimumQuantity: 0,
+      orderGroupSize: 1,
+      allocationStatus: false
+    };
+    
+    if (isEdit) {
+      setEditSupplyForm(prev => ({
+        ...prev,
+        locations: [...prev.locations, newLocation]
+      }));
+    } else {
+      setSupplyForm(prev => ({
+        ...prev,
+        locations: [...prev.locations, newLocation]
+      }));
+    }
+  };
+
+  const removeLocation = (locationId: number, isEdit = false) => {
+    if (isEdit) {
+      setEditSupplyForm(prev => ({
+        ...prev,
+        locations: prev.locations.filter(l => l.id !== locationId)
+      }));
+    } else {
+      setSupplyForm(prev => ({
+        ...prev,
+        locations: prev.locations.filter(l => l.id !== locationId)
+      }));
+    }
+  };
+
+  const updateLocation = (locationId: number, field: string, value: any, isEdit = false) => {
+    console.log(`Updating location ${locationId}, field: ${field}, value:`, value, 'isEdit:', isEdit);
+    if (isEdit) {
+      setEditSupplyForm(prev => {
+        const updated = {
+          ...prev,
+          locations: prev.locations.map(l => 
+            l.id === locationId ? { ...l, [field]: value } : l
+          )
+        };
+        console.log('Updated editSupplyForm locations:', updated.locations);
+        return updated;
+      });
+    } else {
+      setSupplyForm(prev => {
+        const updated = {
+          ...prev,
+          locations: prev.locations.map(l => 
+            l.id === locationId ? { ...l, [field]: value } : l
+          )
+        };
+        console.log('Updated supplyForm locations:', updated.locations);
+        return updated;
+      });
+    }
+  };
+
+  const openEditDialog = async (supply: Supply) => {
+    try {
+      // Fetch the complete supply data with vendor and location relationships
+      const response = await fetch(`/api/supplies/${supply.id}`, {
+        credentials: "include"
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch supply data');
+      }
+      
+      const supplyData = await response.json();
+      console.log('Fetched supply data for editing:', supplyData);
+      console.log('Vendors from API:', supplyData.vendors);
+      console.log('Locations from API:', supplyData.locations);
+      
+      const mappedVendors = supplyData.vendors && supplyData.vendors.length > 0 
+        ? supplyData.vendors.map((v: any) => ({
+            id: v.id,
+            vendorId: v.vendorId,
+            vendorPartNumber: v.vendorPartNumber,
+            price: v.price,
+            isPreferred: v.isPreferred
+          }))
+        : [
+            {
+              id: 0,
+              vendorId: undefined,
+              vendorPartNumber: "Retail Price",
+              price: 0,
+              isPreferred: true
+            }
+          ];
+
+      const mappedLocations = supplyData.locations && supplyData.locations.length > 0
+        ? supplyData.locations.map((l: any) => ({
+            id: l.id,
+            locationId: l.locationId,
+            onHandQuantity: l.onHandQuantity || 0,
+            minimumQuantity: l.minimumQuantity || 0,
+            orderGroupSize: l.orderGroupSize || 1,
+            allocationStatus: l.allocationStatus || false
+          }))
+        : [
+            {
+              id: 0,
+              locationId: undefined,
+              onHandQuantity: 0,
+              minimumQuantity: 0,
+              orderGroupSize: 1,
+              allocationStatus: false
+            }
+          ];
+
+      console.log('Mapped vendors for form:', mappedVendors);
+      console.log('Mapped locations for form:', mappedLocations);
+
+      setEditingSupply(supply);
+      setEditSupplyForm({
+        name: supplyData.name,
+        hexColor: supplyData.hexColor,
+        pieceSize: supplyData.pieceSize,
+        partNumber: supplyData.partNumber || "",
+        description: supplyData.description || "",
+        availableInCatalog: supplyData.availableInCatalog || false,
+        retailPrice: supplyData.retailPrice || 0,
+        imageUrl: supplyData.imageUrl || null,
+        texture: supplyData.texture,
+        vendors: mappedVendors,
+        locations: mappedLocations
+      });
+      setShowEditDialog(true);
+    } catch (error) {
+      console.error('Error fetching supply data for editing:', error);
+      // Fallback to basic data if fetch fails
     setEditingSupply(supply);
     setEditSupplyForm({
       name: supply.name,
       hexColor: supply.hexColor,
       pieceSize: supply.pieceSize,
-      quantityOnHand: supply.quantityOnHand,
-      locationId: supply.location?.id,
-      defaultVendor: supply.defaultVendor || "",
-      defaultVendorPrice: supply.defaultVendorPrice,
-      texture: supply.texture
+        partNumber: supply.partNumber || "",
+        description: supply.description || "",
+        availableInCatalog: supply.availableInCatalog || false,
+        retailPrice: supply.retailPrice || 0,
+        imageUrl: supply.imageUrl || null,
+        texture: supply.texture,
+        vendors: [
+          {
+            id: 0,
+            vendorId: undefined,
+            vendorPartNumber: "Retail Price",
+            price: 0,
+            isPreferred: true
+          }
+        ],
+        locations: [
+          {
+            id: 0,
+            locationId: undefined,
+            onHandQuantity: 0,
+            minimumQuantity: 0,
+            orderGroupSize: 1,
+            allocationStatus: false
+          }
+        ]
     });
     setShowEditDialog(true);
+    }
   };
 
   const filteredSupplies = supplies.filter((supply: Supply) =>
@@ -517,29 +920,29 @@ export default function Supplies() {
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
-                  <span className={`text-xs ${themeClasses.textSecondary} font-medium`}>On Hand:</span>
+                  <span className={`text-xs ${themeClasses.textSecondary} font-medium`}>Part Number:</span>
                   <Badge className="">
-                    {supply.quantityOnHand}
+                    {supply.partNumber || "—"}
                   </Badge>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className={`text-xs ${themeClasses.textSecondary} font-medium`}>Available:</span>
+                  <span className={`text-xs ${themeClasses.textSecondary} font-medium`}>Retail Price:</span>
                   <Badge className="">
-                    {supply.available}
+                    {formatPrice(supply.retailPrice)}
                   </Badge>
                 </div>
               </div>
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
-                  <span className={`text-xs ${themeClasses.textSecondary} font-medium`}>Allocated:</span>
+                  <span className={`text-xs ${themeClasses.textSecondary} font-medium`}>Catalog:</span>
                   <Badge className="">
-                    {supply.allocated}
+                    {supply.availableInCatalog ? "Yes" : "No"}
                   </Badge>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className={`text-xs ${themeClasses.textSecondary} font-medium`}>Used:</span>
+                  <span className={`text-xs ${themeClasses.textSecondary} font-medium`}>Description:</span>
                   <Badge className="">
-                    {supply.used}
+                    {supply.description ? "Yes" : "No"}
                   </Badge>
                 </div>
               </div>
@@ -586,16 +989,16 @@ export default function Supplies() {
                 Location
               </th>
               <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
-                On Hand
+                Part Number
               </th>
               <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
-                Available
+                Retail Price
               </th>
               <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
-                Allocated
+                In Catalog
               </th>
               <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
-                Used
+                Has Description
               </th>
               <th className="px-6 py-4 text-left text-sm font-bold uppercase tracking-wider">
                 Vendor
@@ -638,22 +1041,22 @@ export default function Supplies() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-center">
                   <Badge className="">
-                    {supply.quantityOnHand}
+                    {supply.partNumber || "—"}
                   </Badge>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-center">
                   <Badge className="">
-                    {supply.available}
+                    {formatPrice(supply.retailPrice)}
                   </Badge>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-center">
                   <Badge className="">
-                    {supply.allocated}
+                    {supply.availableInCatalog ? "Yes" : "No"}
                   </Badge>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-center">
                   <Badge className="">
-                    {supply.used}
+                    {supply.description ? "Yes" : "No"}
                   </Badge>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -722,13 +1125,18 @@ export default function Supplies() {
                       Add Supply
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className={`max-w-lg max-h-[90vh] overflow-y-auto ${themeClasses.dialog} border-0 rounded-2xl shadow-2xl`}>
+                  <DialogContent className={`max-w-6xl max-h-[90vh] overflow-y-auto ${themeClasses.dialog} border-0 rounded-2xl shadow-2xl`}>
                     <DialogHeader>
                       <DialogTitle className={`text-2xl font-bold ${isDarkMode ? 'bg-gradient-to-r from-indigo-400 to-purple-400' : 'bg-gradient-to-r from-indigo-600 to-purple-600'} bg-clip-text text-transparent`}>
                         ✨ Add New Supply
                       </DialogTitle>
                     </DialogHeader>
-                    <div className="space-y-6">
+                    
+                    <div className="space-y-8">
+                      {/* Main Section */}
+                      <div className={`p-6 rounded-xl ${isDarkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                        <h3 className={`text-lg font-bold mb-4 ${themeClasses.text}`}>Main Information</h3>
+                        <div className="grid grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="name" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Material Name</Label>
                         <Input
@@ -737,18 +1145,6 @@ export default function Supplies() {
                           onChange={(e) => setSupplyForm(prev => ({ ...prev, name: e.target.value }))}
                           placeholder="Enter material name"
                           className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
-                        />
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="hexColor" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Color</Label>
-                          <Input
-                            id="hexColor"
-                            type="color"
-                            value={supplyForm.hexColor}
-                            onChange={(e) => setSupplyForm(prev => ({ ...prev, hexColor: e.target.value }))}
-                            className={`mt-2 h-12 border-2 ${themeClasses.input} rounded-xl`}
                           />
                         </div>
                         
@@ -769,65 +1165,42 @@ export default function Supplies() {
                         </div>
                       </div>
                       
-                      <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-4 mt-4">
                         <div>
-                          <Label htmlFor="quantityOnHand" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Quantity on Hand</Label>
+                            <Label htmlFor="partNumber" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Part Number</Label>
                           <Input
-                            id="quantityOnHand"
-                            type="number"
-                            min="0"
-                            value={supplyForm.quantityOnHand}
-                            onChange={(e) => setSupplyForm(prev => ({ ...prev, quantityOnHand: parseInt(e.target.value) || 0 }))}
+                              id="partNumber"
+                              value={supplyForm.partNumber}
+                              onChange={(e) => setSupplyForm(prev => ({ ...prev, partNumber: e.target.value }))}
+                              placeholder="Enter part number (optional)"
                             className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
                           />
                         </div>
 
-                        <div>
-                          <Label htmlFor="location" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Location</Label>
-                          <Select value={supplyForm.locationId?.toString() || ""} onValueChange={(value) => setSupplyForm(prev => ({ ...prev, locationId: value ? parseInt(value) : undefined }))}>
-                            <SelectTrigger className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}>
-                              <SelectValue placeholder="Select location" />
-                            </SelectTrigger>
-                            <SelectContent className="rounded-xl">
-                              {locations.map((location: Location) => (
-                                <SelectItem key={location.id} value={location.id.toString()}>
-                                  {location.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="availableInCatalog"
+                              checked={supplyForm.availableInCatalog}
+                              onCheckedChange={(checked) => setSupplyForm(prev => ({ ...prev, availableInCatalog: checked as boolean }))}
+                              className="mt-2"
+                            />
+                            <Label htmlFor="availableInCatalog" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Available in Catalog</Label>
                         </div>
                       </div>
                       
-                      <div>
-                        <Label htmlFor="defaultVendor" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Default Vendor</Label>
-                        <Input
-                          id="defaultVendor"
-                          value={supplyForm.defaultVendor || ""}
-                          onChange={(e) => setSupplyForm(prev => ({ ...prev, defaultVendor: e.target.value }))}
-                          placeholder="Enter vendor name (optional)"
+                        <div className="mt-4">
+                          <Label htmlFor="description" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Description</Label>
+                          <Textarea
+                            id="description"
+                            value={supplyForm.description}
+                            onChange={(e) => setSupplyForm(prev => ({ ...prev, description: e.target.value }))}
+                            placeholder="Enter description (optional)"
                           className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
+                            rows={3}
                         />
                       </div>
                       
-                      <div>
-                        <Label htmlFor="defaultVendorPrice" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Default Vendor Price ($)</Label>
-                        <Input
-                          id="defaultVendorPrice"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={supplyForm.defaultVendorPrice ? (supplyForm.defaultVendorPrice / 100).toFixed(2) : ""}
-                          onChange={(e) => setSupplyForm(prev => ({ 
-                            ...prev, 
-                            defaultVendorPrice: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : undefined 
-                          }))}
-                          placeholder="0.00"
-                          className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
-                        />
-                      </div>
-                      
-                      <div>
+                        <div className="mt-4">
                         <Label className={`text-sm font-bold ${themeClasses.textSecondary}`}>Texture Image</Label>
                         <div className="flex items-center space-x-3 mt-2">
                           <Input
@@ -853,10 +1226,235 @@ export default function Supplies() {
                             />
                           </div>
                         )}
+                        </div>
                       </div>
                       
-                      <div className="flex justify-end space-x-3 pt-6">
-                        <Button variant="outline" onClick={() => setShowAddDialog(false)} className="rounded-xl">
+                      {/* Vendors Section */}
+                      <div className={`p-6 rounded-xl ${isDarkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className={`text-lg font-bold ${themeClasses.text}`}>Vendors</h3>
+                          <Button 
+                            onClick={() => addVendor(false)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                          >
+                            <Plus className="w-4 h-4 mr-2" />
+                            Add Vendor
+                          </Button>
+                        </div>
+                        
+                        <div className="overflow-x-auto">
+                          <table className="w-full border-collapse">
+                            <thead>
+                              <tr className={`${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                                <th className="p-3 text-left font-bold">Preferred</th>
+                                <th className="p-3 text-left font-bold">Vendor Name</th>
+                                <th className="p-3 text-left font-bold">Part #</th>
+                                <th className="p-3 text-left font-bold">Price ($)</th>
+                                <th className="p-3 text-left font-bold">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {supplyForm.vendors.map((vendor, index) => (
+                                <tr key={vendor.id} className={`border-b ${isDarkMode ? 'border-gray-600' : 'border-gray-200'}`}>
+                                  <td className="p-3">
+                                    <input
+                                      type="radio"
+                                      name="preferredVendor"
+                                      checked={vendor.isPreferred}
+                                      onChange={() => {
+                                        // Uncheck all others and check this one
+                                        setSupplyForm(prev => ({
+                                          ...prev,
+                                          vendors: prev.vendors.map(v => ({
+                                            ...v,
+                                            isPreferred: v.id === vendor.id
+                                          }))
+                                        }));
+                                      }}
+                                      className="w-4 h-4"
+                                    />
+                                  </td>
+                                  <td className="p-3">
+                                    {index === 0 ? (
+                                      <span className="text-gray-500">—</span>
+                                    ) : (
+                                      <Select 
+                                        value={vendor.vendorId?.toString() || ""} 
+                                        onValueChange={(value) => updateVendor(vendor.id, 'vendorId', value ? parseInt(value) : undefined, false)}
+                                      >
+                                        <SelectTrigger className="w-full">
+                                          <SelectValue placeholder="Select vendor" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {vendors.map((v: Vendor) => (
+                                            <SelectItem key={v.id} value={v.id.toString()}>
+                                              {v.company}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    )}
+                                  </td>
+                                  <td className="p-3">
+                                    <Input
+                                      value={vendor.vendorPartNumber}
+                                      onChange={(e) => updateVendor(vendor.id, 'vendorPartNumber', e.target.value, false)}
+                                      placeholder="Part number"
+                                      className="w-full"
+                                    />
+                                  </td>
+                                  <td className="p-3">
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={(vendor.price / 100).toFixed(2)}
+                                      onChange={(e) => updateVendor(vendor.id, 'price', Math.round(parseFloat(e.target.value || '0') * 100), false)}
+                                      placeholder="0.00"
+                                      className="w-full"
+                                    />
+                                  </td>
+                                  <td className="p-3">
+                                    {index > 0 && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => removeVendor(vendor.id, false)}
+                                        className="text-red-600 hover:text-red-700"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Locations Section */}
+                      <div className={`p-6 rounded-xl ${isDarkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className={`text-lg font-bold ${themeClasses.text}`}>Locations</h3>
+                          <Button 
+                            onClick={() => addLocation(false)}
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                          >
+                            <Plus className="w-4 h-4 mr-2" />
+                            Add Location
+                          </Button>
+                        </div>
+                        
+                        <div className="overflow-x-auto">
+                          <table className="w-full border-collapse">
+                            <thead>
+                              <tr className={`${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                                <th className="p-3 text-left font-bold">Location Name</th>
+                                <th className="p-3 text-left font-bold">On Hand</th>
+                                <th className="p-3 text-left font-bold">Minimum Qty</th>
+                                <th className="p-3 text-left font-bold">Order in Groups</th>
+                                <th className="p-3 text-left font-bold">Allocation</th>
+                                <th className="p-3 text-left font-bold">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {supplyForm.locations.map((location, index) => (
+                                <tr key={location.id} className={`border-b ${isDarkMode ? 'border-gray-600' : 'border-gray-200'}`}>
+                                  <td className="p-3">
+                                    <Select 
+                                      value={location.locationId?.toString() || ""} 
+                                      onValueChange={(value) => updateLocation(location.id, 'locationId', value ? parseInt(value) : undefined, false)}
+                                    >
+                                      <SelectTrigger className="w-full">
+                                        <SelectValue placeholder="Select location" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {locations.map((loc: Location) => (
+                                          <SelectItem key={loc.id} value={loc.id.toString()}>
+                                            {loc.name}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </td>
+                                  <td className="p-3">
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      value={location.onHandQuantity}
+                                      onChange={(e) => updateLocation(location.id, 'onHandQuantity', parseInt(e.target.value) || 0, false)}
+                                      placeholder="0"
+                                      className="w-full"
+                                    />
+                                  </td>
+                                  <td className="p-3">
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      value={location.minimumQuantity}
+                                      onChange={(e) => updateLocation(location.id, 'minimumQuantity', parseInt(e.target.value) || 0, false)}
+                                      placeholder="0"
+                                      className="w-full"
+                                    />
+                                  </td>
+                                  <td className="p-3">
+                                    <Input
+                                      type="number"
+                                      min="1"
+                                      value={location.orderGroupSize}
+                                      onChange={(e) => updateLocation(location.id, 'orderGroupSize', parseInt(e.target.value) || 1, false)}
+                                      placeholder="1"
+                                      className="w-full"
+                                    />
+                                  </td>
+                                  <td className="p-3">
+                                    <Select 
+                                      value={location.allocationStatus ? "allocated" : "available"} 
+                                      onValueChange={(value) => updateLocation(location.id, 'allocationStatus', value === "allocated", false)}
+                                    >
+                                      <SelectTrigger className="w-full">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="available">Available</SelectItem>
+                                        <SelectItem value="allocated">Allocated</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </td>
+                                  <td className="p-3">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => removeLocation(location.id, false)}
+                                      className="text-red-600 hover:text-red-700"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex justify-between items-center pt-6 border-t">
+                        <Button 
+                          variant="outline" 
+                          onClick={() => setShowAddDialog(false)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          Delete This Item
+                        </Button>
+                        
+                        <div className="flex space-x-3">
+                          <Button 
+                            variant="outline" 
+                            onClick={() => setShowAddDialog(false)}
+                            className="rounded-xl"
+                          >
                           Cancel
                         </Button>
                         <Button 
@@ -864,8 +1462,16 @@ export default function Supplies() {
                           disabled={createSupplyMutation.isPending}
                           className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-xl"
                         >
-                          {createSupplyMutation.isPending ? "Creating..." : "✨ Create Supply"}
+                            {createSupplyMutation.isPending ? "Creating..." : "Save and Edit Next"}
+                          </Button>
+                          <Button 
+                            onClick={handleAddSupply} 
+                            disabled={createSupplyMutation.isPending}
+                            className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold rounded-xl"
+                          >
+                            {createSupplyMutation.isPending ? "Creating..." : "Save"}
                         </Button>
+                        </div>
                       </div>
                     </div>
                   </DialogContent>
@@ -1002,25 +1608,29 @@ export default function Supplies() {
 
       {/* Edit Supply Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className={`max-w-lg max-h-[90vh] overflow-y-auto ${themeClasses.dialog} border-0 rounded-2xl shadow-2xl`}>
+        <DialogContent className={`max-w-6xl max-h-[90vh] overflow-y-auto ${themeClasses.dialog} border-0 rounded-2xl shadow-2xl`}>
           <DialogHeader>
             <DialogTitle className={`text-2xl font-bold ${isDarkMode ? 'bg-gradient-to-r from-indigo-400 to-purple-400' : 'bg-gradient-to-r from-indigo-600 to-purple-600'} bg-clip-text text-transparent`}>
               ✏️ Edit Supply
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-6">
+          
+          <div className="space-y-8">
+            {/* Main Section */}
+            <div className={`p-6 rounded-xl ${isDarkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
+              <h3 className={`text-lg font-bold mb-4 ${themeClasses.text}`}>Main Information</h3>
+              <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="editName" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Material Name</Label>
               <Input
                 id="editName"
                 value={editSupplyForm.name}
                 onChange={(e) => setEditSupplyForm(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="Supply name"
+                    placeholder="Enter material name"
                 className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
               />
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="editHexColor" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Color</Label>
                 <Input
@@ -1030,8 +1640,10 @@ export default function Supplies() {
                   onChange={(e) => setEditSupplyForm(prev => ({ ...prev, hexColor: e.target.value }))}
                   className={`mt-2 h-12 border-2 ${themeClasses.input} rounded-xl`}
                 />
+                </div>
               </div>
               
+              <div className="grid grid-cols-2 gap-4 mt-4">
               <div>
                 <Label htmlFor="editPieceSize" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Piece Size</Label>
                 <Select value={editSupplyForm.pieceSize} onValueChange={(value) => setEditSupplyForm(prev => ({ ...prev, pieceSize: value }))}>
@@ -1046,68 +1658,58 @@ export default function Supplies() {
                     <SelectItem value="box">Box</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="editQuantityOnHand" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Quantity on Hand</Label>
+                  <Label htmlFor="editRetailPrice" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Retail Price (cents)</Label>
                 <Input
-                  id="editQuantityOnHand"
+                    id="editRetailPrice"
                   type="number"
                   min="0"
-                  value={editSupplyForm.quantityOnHand}
-                  onChange={(e) => setEditSupplyForm(prev => ({ ...prev, quantityOnHand: parseInt(e.target.value) || 0 }))}
+                    value={editSupplyForm.retailPrice}
+                    onChange={(e) => setEditSupplyForm(prev => ({ ...prev, retailPrice: parseInt(e.target.value) || 0 }))}
+                    placeholder="0"
                   className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
                 />
               </div>
-
-              <div>
-                <Label htmlFor="editLocation" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Location</Label>
-                <Select value={editSupplyForm.locationId?.toString() || ""} onValueChange={(value) => setEditSupplyForm(prev => ({ ...prev, locationId: value ? parseInt(value) : undefined }))}>
-                  <SelectTrigger className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}>
-                    <SelectValue placeholder="Select location" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    {locations.map((location: Location) => (
-                      <SelectItem key={location.id} value={location.id.toString()}>
-                        {location.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            </div>
+            
+              <div className="grid grid-cols-2 gap-4 mt-4">
+            <div>
+                  <Label htmlFor="editPartNumber" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Part Number</Label>
+              <Input
+                    id="editPartNumber"
+                    value={editSupplyForm.partNumber}
+                    onChange={(e) => setEditSupplyForm(prev => ({ ...prev, partNumber: e.target.value }))}
+                    placeholder="Enter part number (optional)"
+                className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
+              />
+            </div>
+            
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="editAvailableInCatalog"
+                    checked={editSupplyForm.availableInCatalog}
+                    onCheckedChange={(checked) => setEditSupplyForm(prev => ({ ...prev, availableInCatalog: checked as boolean }))}
+                    className="mt-2"
+                  />
+                  <Label htmlFor="editAvailableInCatalog" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Available in Catalog</Label>
+                </div>
               </div>
-            </div>
-            
-            <div>
-              <Label htmlFor="editDefaultVendor" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Default Vendor</Label>
-              <Input
-                id="editDefaultVendor"
-                value={editSupplyForm.defaultVendor || ""}
-                onChange={(e) => setEditSupplyForm(prev => ({ ...prev, defaultVendor: e.target.value }))}
-                placeholder="Enter vendor name (optional)"
+              
+              <div className="mt-4">
+                <Label htmlFor="editDescription" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Description</Label>
+                <Textarea
+                  id="editDescription"
+                  value={editSupplyForm.description}
+                  onChange={(e) => setEditSupplyForm(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Enter description (optional)"
                 className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
+                  rows={3}
               />
             </div>
             
-            <div>
-              <Label htmlFor="editDefaultVendorPrice" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Default Vendor Price ($)</Label>
-              <Input
-                id="editDefaultVendorPrice"
-                type="number"
-                min="0"
-                step="0.01"
-                value={editSupplyForm.defaultVendorPrice ? (editSupplyForm.defaultVendorPrice / 100).toFixed(2) : ""}
-                onChange={(e) => setEditSupplyForm(prev => ({ 
-                  ...prev, 
-                  defaultVendorPrice: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : undefined 
-                }))}
-                placeholder="0.00"
-                className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
-              />
-            </div>
-            
-            <div>
+              <div className="mt-4">
               <Label className={`text-sm font-bold ${themeClasses.textSecondary}`}>Texture Image</Label>
               <div className="flex items-center space-x-3 mt-2">
                 <Input
@@ -1133,10 +1735,235 @@ export default function Supplies() {
                   />
                 </div>
               )}
+              </div>
             </div>
             
-            <div className="flex justify-end space-x-3 pt-6">
-              <Button variant="outline" onClick={() => setShowEditDialog(false)} className="rounded-xl">
+            {/* Vendors Section */}
+            <div className={`p-6 rounded-xl ${isDarkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className={`text-lg font-bold ${themeClasses.text}`}>Vendors</h3>
+                <Button 
+                  onClick={() => addVendor(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Vendor
+                </Button>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className={`${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                      <th className="p-3 text-left font-bold">Preferred</th>
+                      <th className="p-3 text-left font-bold">Vendor Name</th>
+                      <th className="p-3 text-left font-bold">Part #</th>
+                      <th className="p-3 text-left font-bold">Price ($)</th>
+                      <th className="p-3 text-left font-bold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {editSupplyForm.vendors.map((vendor, index) => (
+                      <tr key={vendor.id} className={`border-b ${isDarkMode ? 'border-gray-600' : 'border-gray-200'}`}>
+                        <td className="p-3">
+                          <input
+                            type="radio"
+                            name="preferredVendorEdit"
+                            checked={vendor.isPreferred}
+                            onChange={() => {
+                              // Uncheck all others and check this one
+                              setEditSupplyForm(prev => ({
+                                ...prev,
+                                vendors: prev.vendors.map(v => ({
+                                  ...v,
+                                  isPreferred: v.id === vendor.id
+                                }))
+                              }));
+                            }}
+                            className="w-4 h-4"
+                          />
+                        </td>
+                        <td className="p-3">
+                          {index === 0 ? (
+                            <span className="text-gray-500">—</span>
+                          ) : (
+                            <Select 
+                              value={vendor.vendorId?.toString() || ""} 
+                              onValueChange={(value) => updateVendor(vendor.id, 'vendorId', value ? parseInt(value) : undefined, true)}
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select vendor" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {vendors.map((v: Vendor) => (
+                                  <SelectItem key={v.id} value={v.id.toString()}>
+                                    {v.company}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <Input
+                            value={vendor.vendorPartNumber}
+                            onChange={(e) => updateVendor(vendor.id, 'vendorPartNumber', e.target.value, true)}
+                            placeholder="Part number"
+                            className="w-full"
+                          />
+                        </td>
+                        <td className="p-3">
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={(vendor.price / 100).toFixed(2)}
+                            onChange={(e) => updateVendor(vendor.id, 'price', Math.round(parseFloat(e.target.value || '0') * 100), true)}
+                            placeholder="0.00"
+                            className="w-full"
+                          />
+                        </td>
+                        <td className="p-3">
+                          {index > 0 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => removeVendor(vendor.id, true)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Locations Section */}
+            <div className={`p-6 rounded-xl ${isDarkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className={`text-lg font-bold ${themeClasses.text}`}>Locations</h3>
+                <Button 
+                  onClick={() => addLocation(true)}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Location
+                </Button>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className={`${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                      <th className="p-3 text-left font-bold">Location Name</th>
+                      <th className="p-3 text-left font-bold">On Hand</th>
+                      <th className="p-3 text-left font-bold">Minimum Qty</th>
+                      <th className="p-3 text-left font-bold">Order in Groups</th>
+                      <th className="p-3 text-left font-bold">Allocation</th>
+                      <th className="p-3 text-left font-bold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {editSupplyForm.locations.map((location, index) => (
+                      <tr key={location.id} className={`border-b ${isDarkMode ? 'border-gray-600' : 'border-gray-200'}`}>
+                        <td className="p-3">
+                          <Select 
+                            value={location.locationId?.toString() || ""} 
+                            onValueChange={(value) => updateLocation(location.id, 'locationId', value ? parseInt(value) : undefined, true)}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select location" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {locations.map((loc: Location) => (
+                                <SelectItem key={loc.id} value={loc.id.toString()}>
+                                  {loc.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="p-3">
+                          <Input
+                            type="number"
+                            min="0"
+                            value={location.onHandQuantity}
+                            onChange={(e) => updateLocation(location.id, 'onHandQuantity', parseInt(e.target.value) || 0, true)}
+                            placeholder="0"
+                            className="w-full"
+                          />
+                        </td>
+                        <td className="p-3">
+                          <Input
+                            type="number"
+                            min="0"
+                            value={location.minimumQuantity}
+                            onChange={(e) => updateLocation(location.id, 'minimumQuantity', parseInt(e.target.value) || 0, true)}
+                            placeholder="0"
+                            className="w-full"
+                          />
+                        </td>
+                        <td className="p-3">
+                          <Input
+                            type="number"
+                            min="1"
+                            value={location.orderGroupSize}
+                            onChange={(e) => updateLocation(location.id, 'orderGroupSize', parseInt(e.target.value) || 1, true)}
+                            placeholder="1"
+                            className="w-full"
+                          />
+                        </td>
+                        <td className="p-3">
+                          <Select 
+                            value={location.allocationStatus ? "allocated" : "available"} 
+                            onValueChange={(value) => updateLocation(location.id, 'allocationStatus', value === "allocated", true)}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="available">Available</SelectItem>
+                              <SelectItem value="allocated">Allocated</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="p-3">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => removeLocation(location.id, true)}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-between items-center pt-6 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => setSupplyToDelete(editingSupply)}
+                className="text-red-600 hover:text-red-700"
+              >
+                Delete This Item
+              </Button>
+              
+              <div className="flex space-x-3">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowEditDialog(false)}
+                  className="rounded-xl"
+                >
                 Cancel
               </Button>
               <Button 
@@ -1144,8 +1971,16 @@ export default function Supplies() {
                 disabled={updateSupplyMutation.isPending}
                 className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-xl"
               >
-                {updateSupplyMutation.isPending ? "Updating..." : "✨ Update Supply"}
+                  {updateSupplyMutation.isPending ? "Updating..." : "Save and Edit Next"}
+                </Button>
+                <Button 
+                  onClick={handleEditSupply} 
+                  disabled={updateSupplyMutation.isPending}
+                  className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold rounded-xl"
+                >
+                  {updateSupplyMutation.isPending ? "Updating..." : "Save"}
               </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
