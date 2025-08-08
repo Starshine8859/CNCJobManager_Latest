@@ -1592,7 +1592,7 @@ export class DatabaseStorage implements IStorage {
       .select({
         id: vendors.id,
         company: vendors.company,
-        contactInfo: vendors.contactInfo,
+        contact_info: vendors.contact_info,
         address: vendors.address,
         phone: vendors.phone,
         email: vendors.email,

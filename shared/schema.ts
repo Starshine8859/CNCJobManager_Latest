@@ -85,7 +85,7 @@ export const vendors = pgTable("vendors", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   company: text("company").notNull(), // Company name field
-  contactInfo: text("contact_info"),
+  contact_info: text("contact_info"),
   address: text("address"),
   phone: text("phone"),
   email: text("email"),
@@ -557,7 +557,7 @@ export type Vendor = {
   id: number;
   name: string; 
   company: string;
-  contactInfo: string | null;
+  contact_info: string | null;
   createdAt: Date;
 };
 export type InsertVendor = z.infer<typeof insertVendorSchema>;

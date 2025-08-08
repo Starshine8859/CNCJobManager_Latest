@@ -29,7 +29,7 @@ interface Supply {
 interface Vendor {
   id: number;
   name: string;
-  contactInfo: string | null;
+  contact_info: string | null;
   address: string | null;
   phone: string | null;
   email: string | null;

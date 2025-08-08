@@ -45,7 +45,7 @@ interface Vendor {
   id: number;
   name: string;
   company: string;
-  contactInfo?: string;
+  contact_info?: string;
   createdAt: string;
   updatedAt: string;
 }

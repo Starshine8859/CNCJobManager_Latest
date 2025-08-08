@@ -1092,22 +1092,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/vendors", async (req, res) => {
     try {
-      // Check if any users exist
-      console.log(req.body);
-      const existingVendors = await storage.getAllVendors();
-      if (existingVendors.length > 0) {
-        return res.status(400).json({ message: "Setup already completed" });
-      }
       const { name, company, contact_info } = req.body;
-      await storage.createOneVendor({
+      const vendor = await storage.createOneVendor({
         name: name.toLowerCase(), 
         company: company,
-        contactInfo: contact_info
+        contact_info: contact_info
       });
-      res.json({ message: "Vendor created successfully" });
+      res.json(vendor);
     } catch (error) {
-      console.error('Setup error:', error);
-      res.status(500).json({ message: "Setup failed" });
+      console.error('Creating error:', error);
+      res.status(500).json({ message: "Vendor failed" });
     }
   })
 

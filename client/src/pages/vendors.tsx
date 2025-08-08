@@ -89,6 +89,7 @@ export default function VendorsPage(): JSX.Element {
         setVendors((prev) => prev.map((v) => (v.id === updated.id ? updated : v)));
       } else {
         // create
+        console.log('fetch function')
         const res = await fetch(`/api/vendors`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -105,6 +106,7 @@ export default function VendorsPage(): JSX.Element {
       setSubmitting(false);
     }
   }
+  console.log(vendors)
 
   async function handleDelete(vendor: Vendor) {
     const ok = confirm(`Delete vendor "${vendor.name}"? This can't be undone.`);
