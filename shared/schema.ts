@@ -83,6 +83,7 @@ export const supplyTransactions = pgTable("supply_transactions", {
 // Vendors table
 export const vendors = pgTable("vendors", {
   id: serial("id").primaryKey(),
+  name: text("name").notNull(),
   company: text("company").notNull(), // Company name field
   contactInfo: text("contact_info"),
   address: text("address"),
@@ -490,6 +491,7 @@ export type Session = typeof sessions.$inferSelect;
 export type InsertSession = z.infer<typeof insertSessionSchema>;
 
 export type User = typeof users.$inferSelect;
+export type Vendors = typeof vendors.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type ColorGroup = typeof colorGroups.$inferSelect;
 export type InsertColorGroup = z.infer<typeof insertColorGroupSchema>;
@@ -553,6 +555,7 @@ export type SupplyWithLocation = Supply & {
 // Purchase order types
 export type Vendor = {
   id: number;
+  name: string; 
   company: string;
   contactInfo: string | null;
   createdAt: Date;

@@ -43,9 +43,11 @@ interface Location {
 
 interface Vendor {
   id: number;
+  name: string;
   company: string;
   contactInfo?: string;
   createdAt: string;
+  updatedAt: string;
 }
 
 // Enhanced TextureSwatch component with black letter fallback

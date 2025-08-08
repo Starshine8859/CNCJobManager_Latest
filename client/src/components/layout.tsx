@@ -157,6 +157,10 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
                       <Package className="h-4 w-4 mr-2" />
                       Supply Locations
                     </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setLocation("/vendors")}>
+                      <Package className="h-4 w-4 mr-2" />
+                      Vendors
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </nav>

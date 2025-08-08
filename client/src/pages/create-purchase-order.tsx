@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/layout";
 import { useLocation } from "wouter";
+import { apiRequest } from "@/lib/queryClient";
 
 interface Supply {
   id: number;
@@ -59,6 +60,7 @@ export default function CreatePurchaseOrder() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  
 
   // Fetch supplies
   const { data: supplies = [] } = useQuery({

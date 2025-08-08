@@ -846,16 +846,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/vendors", requireAuth, async (req, res) => {
+   app.put("/api/vendors/:id", requireAuth, async (req, res) => {
+    console.log('--------', req.params.id);
     try {
+      const id = parseInt(req.params.id);
       const vendorData = insertVendorSchema.parse(req.body);
-      const vendor = await storage.createVendor(vendorData);
+      const vendor = await storage.updateVendor(id, vendorData);
       res.json(vendor);
     } catch (error) {
       res.status(400).json({ message: "Invalid vendor data" });
     }
   });
 
+  app.delete("/api/vendors/:id", requireSuperAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      console.log('----------', id);
+      await storage.deleteVendor(id);
+      res.json({ message: "Vendor deleted successfully" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete Vendor" });
+    }
+  });
   // Get vendors for a specific supply
   app.get("/api/supplies/:id/vendors", requireAuth, async (req, res) => {
     try {
@@ -1077,6 +1089,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to check setup status" });
     }
   });
+
+  app.post("/api/vendors", async (req, res) => {
+    try {
+      // Check if any users exist
+      console.log(req.body);
+      const existingVendors = await storage.getAllVendors();
+      if (existingVendors.length > 0) {
+        return res.status(400).json({ message: "Setup already completed" });
+      }
+      const { name, company, contact_info } = req.body;
+      await storage.createOneVendor({
+        name: name.toLowerCase(), 
+        company: company,
+        contactInfo: contact_info
+      });
+      res.json({ message: "Vendor created successfully" });
+    } catch (error) {
+      console.error('Setup error:', error);
+      res.status(500).json({ message: "Setup failed" });
+    }
+  })
+
+  app.get("api/vendors", async (req, res) => {
+     try {
+      const existingVendors = await storage.getAllVendors();
+      res.json({ required: existingVendors.length === 0 });
+    } catch (error) {
+      console.error('Setup check error:', error);
+      res.status(500).json({ message: "Failed to check setup status" });
+    }
+  })
 
   const httpServer = createServer(app);
 
