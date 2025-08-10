@@ -851,8 +851,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       const vendorData = insertVendorSchema.parse(req.body);
-      const vendor = await storage.updateVendor(id, vendorData);
-      res.json(vendor);
+      await storage.updateVendor(id, vendorData);
+      res.json({ message: "Success Editting" });
     } catch (error) {
       res.status(400).json({ message: "Invalid vendor data" });
     }

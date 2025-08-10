@@ -25,7 +25,7 @@ export interface IStorage {
   deleteUser(id: number): Promise<void>;
   //Vendor management
   // deleteVendor(id: number): Promise<void>;
-  // createOneVendor()
+  updateVendor(id: number): Promise<Vendor>;
   // Job management
   createJob(jobData: CreateJob): Promise<JobWithMaterials>;
   getJob(id: number): Promise<JobWithMaterials | undefined>;
