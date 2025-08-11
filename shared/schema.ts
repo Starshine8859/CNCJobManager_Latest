@@ -22,10 +22,23 @@ export const sessions = pgTable("sessions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Locations table (replaces color groups)
+// Location categories for better organization
+export const locationCategories = pgTable("location_categories", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  sortOrder: integer("sort_order").default(0),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Enhanced locations with categories
 export const locations = pgTable("locations", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
+  categoryId: integer("category_id").references(() => locationCategories.id),
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -56,15 +69,35 @@ export const supplyVendors = pgTable("supply_vendors", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Supply-Location linking table (many-to-many)
+// Enhanced supply-location with reorder management
 export const supplyLocations = pgTable("supply_locations", {
   id: serial("id").primaryKey(),
   supplyId: integer("supply_id").references(() => supplies.id).notNull(),
   locationId: integer("location_id").references(() => locations.id).notNull(),
   onHandQuantity: integer("on_hand_quantity").notNull().default(0), // Current stock at location
+  allocatedQuantity: integer("allocated_quantity").notNull().default(0), // Reserved for jobs
+  availableQuantity: integer("available_quantity").notNull().default(0), // Available for use
   minimumQuantity: integer("minimum_quantity").notNull().default(0), // Reorder threshold
+  reorderPoint: integer("reorder_point").notNull().default(0), // When to reorder
   orderGroupSize: integer("order_group_size").notNull().default(1), // Order in groups of
-  allocationStatus: boolean("allocation_status").default(false), // Allocation priority
+  suggestedOrderQty: integer("suggested_order_qty").default(0), // Calculated order quantity
+  lastReorderDate: timestamp("last_reorder_date"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Inventory movements (check-in/check-out)
+export const inventoryMovements = pgTable("inventory_movements", {
+  id: serial("id").primaryKey(),
+  supplyId: integer("supply_id").references(() => supplies.id).notNull(),
+  fromLocationId: integer("from_location_id").references(() => locations.id),
+  toLocationId: integer("to_location_id").references(() => locations.id),
+  quantity: integer("quantity").notNull(),
+  movementType: text("movement_type").notNull(), // 'check_in', 'check_out', 'transfer', 'adjust'
+  referenceType: text("reference_type"), // 'purchase_order', 'job', 'manual', 'adjustment'
+  referenceId: integer("reference_id"), // ID of the reference (PO, job, etc.)
+  notes: text("notes"),
+  userId: integer("user_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -80,42 +113,80 @@ export const supplyTransactions = pgTable("supply_transactions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Vendors table
+// Enhanced vendors with more details
 export const vendors = pgTable("vendors", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  company: text("company").notNull(), // Company name field
-  contact_info: text("contact_info"),
+  company: text("company").notNull(),
+  contactInfo: text("contact_info"),
   address: text("address"),
   phone: text("phone"),
   email: text("email"),
+  paymentTerms: text("payment_terms"), // Net 30, etc.
+  creditLimit: integer("credit_limit"), // in cents
+  rating: integer("rating"), // 1-5 stars
+  notes: text("notes"),
+  isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Purchase Orders table
+// Vendor contacts
+export const vendorContacts = pgTable("vendor_contacts", {
+  id: serial("id").primaryKey(),
+  vendorId: integer("vendor_id").references(() => vendors.id).notNull(),
+  name: text("name").notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  role: text("role"), // 'purchasing', 'sales', 'technical'
+  isPrimary: boolean("is_primary").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Inventory alerts and notifications
+export const inventoryAlerts = pgTable("inventory_alerts", {
+  id: serial("id").primaryKey(),
+  supplyId: integer("supply_id").references(() => supplies.id).notNull(),
+  locationId: integer("location_id").references(() => locations.id).notNull(),
+  alertType: text("alert_type").notNull(), // 'low_stock', 'reorder_point', 'overstock'
+  message: text("message").notNull(),
+  isRead: boolean("is_read").default(false),
+  isResolved: boolean("is_resolved").default(false),
+  userId: integer("user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Enhanced purchase orders with email integration
 export const purchaseOrders = pgTable("purchase_orders", {
   id: serial("id").primaryKey(),
   poNumber: text("po_number").notNull().unique(), // PO-YYYYMMDD-XXX
   dateOrdered: timestamp("date_ordered").defaultNow().notNull(),
   dateReceived: timestamp("date_received"),
+  expectedDeliveryDate: timestamp("expected_delivery_date"),
   totalAmount: integer("total_amount").notNull().default(0), // in cents
-  status: text("status").notNull().default("pending"), // pending, ordered, received
+  status: text("status").notNull().default("draft"), // draft, pending, ordered, partially_received, received, cancelled
+  vendorEmail: text("vendor_email"),
+  emailSubject: text("email_subject"),
   additionalComments: text("additional_comments"),
+  sendEmail: boolean("send_email").default(false),
   createdBy: integer("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Purchase Order Items table
+// Enhanced purchase order items
 export const purchaseOrderItems = pgTable("purchase_order_items", {
   id: serial("id").primaryKey(),
   purchaseOrderId: integer("purchase_order_id").references(() => purchaseOrders.id).notNull(),
   supplyId: integer("supply_id").references(() => supplies.id).notNull(),
   vendorId: integer("vendor_id").references(() => vendors.id).notNull(),
-  quantity: integer("quantity").notNull(),
+  locationId: integer("location_id").references(() => locations.id).notNull(),
+  neededQuantity: integer("needed_quantity").notNull().default(0), // What's required
+  orderQuantity: integer("order_quantity").notNull(), // What's being ordered
+  receivedQuantity: integer("received_quantity").notNull().default(0), // What's been received
   pricePerUnit: integer("price_per_unit").notNull(), // in cents
   totalPrice: integer("total_price").notNull(), // in cents
+  orderInGroups: integer("order_in_groups").default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -570,6 +641,40 @@ export type PurchaseOrderWithItems = PurchaseOrder & {
   items: (PurchaseOrderItem & {
     supply: Supply;
     vendor: Vendor;
+  })[];
+  createdByUser: User;
+};
+
+// New types for enhanced inventory management
+export type LocationCategory = typeof locationCategories.$inferSelect;
+export type InsertLocationCategory = z.infer<typeof insertLocationCategorySchema>;
+export type InventoryMovement = typeof inventoryMovements.$inferSelect;
+export type InsertInventoryMovement = z.infer<typeof insertInventoryMovementSchema>;
+export type VendorContact = typeof vendorContacts.$inferSelect;
+export type InsertVendorContact = z.infer<typeof insertVendorContactSchema>;
+export type InventoryAlert = typeof inventoryAlerts.$inferSelect;
+export type InsertInventoryAlert = z.infer<typeof insertInventoryAlertSchema>;
+
+// Enhanced types
+export type LocationWithCategory = Location & {
+  category: LocationCategory | null;
+};
+
+export type SupplyWithLocationEnhanced = Supply & {
+  locations: (SupplyLocation & {
+    location: LocationWithCategory;
+  })[];
+};
+
+export type VendorWithContacts = Vendor & {
+  contacts: VendorContact[];
+};
+
+export type PurchaseOrderWithItemsEnhanced = PurchaseOrder & {
+  items: (PurchaseOrderItem & {
+    supply: Supply;
+    vendor: Vendor;
+    location: Location;
   })[];
   createdByUser: User;
 };

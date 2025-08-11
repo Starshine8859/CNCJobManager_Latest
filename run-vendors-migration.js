@@ -4,7 +4,7 @@ const path = require('path');
 
 // Database configuration
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/cnc_job_manager'
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:123123@localhost:5432/replit'
 });
 
 async function runMigration() {

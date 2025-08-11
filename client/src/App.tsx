@@ -15,6 +15,8 @@ import CreatePurchaseOrder from "@/pages/create-purchase-order";
 import CheckoutOrder from "@/pages/checkout-order";
 import SupplyLocations from "@/pages/supply-locations";
 import Vendors from "@/pages/vendors";
+import InventoryMovements from "@/pages/inventory-movements";
+import EnhancedPurchaseOrders from "@/pages/enhanced-purchase-orders";
 import { useAuth } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 
@@ -52,6 +54,8 @@ function Router() {
       <Route path="/checkout-order" component={CheckoutOrder} />
       <Route path="/supply-locations" component={SupplyLocations} />
       <Route path="/vendors" component={Vendors} />
+      <Route path="/inventory-movements" component={InventoryMovements} />
+      <Route path="/enhanced-purchase-orders" component={EnhancedPurchaseOrders} />
       <Route component={NotFound} />
     </Switch>
   );

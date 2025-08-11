@@ -41,6 +41,7 @@ interface PurchaseOrderItem {
   supplyName: string;
   vendorId: number;
   vendorName: string;
+  locationId: number; // needed by backend
   quantity: number;
   pricePerUnit: number;
   totalPrice: number;
@@ -141,10 +142,38 @@ export default function CreatePurchaseOrder() {
   // Create purchase order mutation
   const createPurchaseOrderMutation = useMutation({
     mutationFn: async (data: { orderData: any; items: PurchaseOrderItem[] }) => {
-      const response = await fetch("/api/purchase-orders", {
+      if (!data.items || data.items.length === 0) {
+        throw new Error("No items to create purchase order");
+      }
+
+      // Disallow 'Retail' placeholder vendor (id 0)
+      if (data.items.some((it) => it.vendorId === 0)) {
+        throw new Error("Please select a vendor for all items (Retail is not allowed)");
+      }
+
+      // Use the first item's vendor as the order vendor to satisfy backend validation
+      const topLevelVendorId = data.items[0].vendorId;
+
+      const payload = {
+        vendorId: topLevelVendorId,
+        expectedDeliveryDate: undefined,
+        notes: data.orderData?.additionalComments || undefined,
+        sendEmail: false,
+        items: data.items.map((it) => ({
+          supplyId: it.supplyId,
+          vendorId: it.vendorId,
+          locationId: (it as any).locationId,
+          neededQuantity: it.neededQty ?? 0,
+          orderQuantity: it.quantity,
+          // backend expects cents (integers)
+          pricePerUnit: Math.round((it.pricePerUnit ?? 0) * 100),
+        })),
+      };
+
+      const response = await fetch("/api/purchase-orders/enhanced", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
+        body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error("Failed to create purchase order");
       return response.json();
@@ -204,6 +233,7 @@ export default function CreatePurchaseOrder() {
       supplyName: supply.name,
       vendorId: selectedVendor === "retail" ? 0 : parseInt(selectedVendor),
       vendorName: selectedVendor === "retail" ? "Retail($0.00)" : (vendor?.company || "Unknown"),
+      locationId: parseInt(selectedLocation),
       quantity,
       pricePerUnit,
       totalPrice: quantity * pricePerUnit,

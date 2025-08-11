@@ -1,6 +1,7 @@
 import { 
   users, jobs, cutlists, jobMaterials, colors, colorGroups, jobTimeLogs, recutEntries, sheetCutLogs,
   locations, supplies, supplyVendors, supplyLocations, supplyTransactions, vendors, purchaseOrders, purchaseOrderItems,
+  locationCategories, inventoryMovements, vendorContacts, inventoryAlerts,
   type User, type InsertUser, type Job, type JobWithMaterials, 
   type Color, type ColorGroup, type InsertColor, type InsertColorGroup,
   type JobMaterial, type InsertJobMaterial, type CreateJob,
@@ -8,7 +9,8 @@ import {
   type CutlistWithMaterials, type JobWithCutlists, type RecutEntry,
   type Location, type InsertLocation, type Supply, type InsertSupply,
   type SupplyWithLocation, type SupplyTransaction, type InsertSupplyTransaction,
-  type Vendor, type InsertVendor, type PurchaseOrderWithItems, type InsertPurchaseOrder, type InsertPurchaseOrderItem
+  type Vendor, type InsertVendor, type PurchaseOrderWithItems, type InsertPurchaseOrder, type InsertPurchaseOrderItem,
+  type LocationCategory, type InsertLocationCategory, type InventoryMovement, type InsertInventoryMovement
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, ilike, sql, inArray, gte, lte } from "drizzle-orm";
@@ -37,7 +39,7 @@ export interface IStorage {
   pauseJob(id: number): Promise<void>;
   resumeJob(id: number): Promise<void>;
   completeJob(id: number): Promise<void>;
-  deleteJob(id: number): Promise<void>;
+  deleteJob(jobId: number): Promise<void>;
   updateMaterialProgress(materialId: number, completedSheets: number): Promise<void>;
   updateSheetStatus(materialId: number, sheetIndex: number, status: string, userId?: number): Promise<void>;
   deleteSheet(materialId: number, sheetIndex: number): Promise<void>;
@@ -86,9 +88,34 @@ export interface IStorage {
   // Location management (new)
   getAllLocations(): Promise<Location[]>;
   createLocation(location: InsertLocation): Promise<Location>;
-  updateLocation(id: number, name: string): Promise<void>;
+  updateLocation(id: number, name: string, description?: string): Promise<void>;
   deleteLocation(id: number): Promise<void>;
+  toggleLocationActive(id: number, isActive: boolean): Promise<void>;
   getSuppliesAtLocation(locationId: number): Promise<any[]>;
+
+  // Enhanced inventory management (new)
+  // Check-in/Check-out operations
+  checkInInventory(supplyId: number, locationId: number, quantity: number, referenceType?: string, referenceId?: number, notes?: string, userId?: number): Promise<void>;
+  checkOutInventory(supplyId: number, locationId: number, quantity: number, referenceType?: string, referenceId?: number, notes?: string, userId?: number): Promise<void>;
+  transferInventory(supplyId: number, fromLocationId: number, toLocationId: number, quantity: number, notes?: string, userId?: number): Promise<void>;
+  adjustInventory(supplyId: number, locationId: number, quantity: number, notes?: string, userId?: number): Promise<void>;
+  
+  // Inventory movements
+  getInventoryMovements(supplyId?: number, locationId?: number, fromDate?: Date, toDate?: Date): Promise<any[]>;
+  getInventoryMovement(id: number): Promise<any>;
+  
+  // Reorder management
+  getNeedToPurchase(): Promise<any[]>;
+  getReorderSuggestions(): Promise<any[]>;
+  updateReorderPoint(supplyLocationId: number, reorderPoint: number): Promise<void>;
+  getInventoryAlerts(): Promise<any[]>;
+  resolveInventoryAlert(alertId: number): Promise<void>;
+  
+  // Location categories
+  getAllLocationCategories(): Promise<any[]>;
+  createLocationCategory(category: any): Promise<any>;
+  updateLocationCategory(id: number, category: any): Promise<void>;
+  deleteLocationCategory(id: number): Promise<void>;
 
   // Purchase order management
   getAllPurchaseOrders(fromDate?: string, toDate?: string): Promise<PurchaseOrderWithItems[]>;
@@ -1190,8 +1217,7 @@ export class DatabaseStorage implements IStorage {
         locationId: supplyLocations.locationId,
         onHandQuantity: supplyLocations.onHandQuantity,
         minimumQuantity: supplyLocations.minimumQuantity,
-        orderGroupSize: supplyLocations.orderGroupSize,
-        allocationStatus: supplyLocations.allocationStatus
+        orderGroupSize: supplyLocations.orderGroupSize
       }).from(supplyLocations).where(eq(supplyLocations.supplyId, id));
 
       return {
@@ -1238,8 +1264,7 @@ export class DatabaseStorage implements IStorage {
           locationId: location.locationId,
           onHandQuantity: location.onHandQuantity || 0,
           minimumQuantity: location.minimumQuantity || 0,
-          orderGroupSize: location.orderGroupSize || 1,
-          allocationStatus: location.allocationStatus || false
+          orderGroupSize: location.orderGroupSize || 1
         }));
         
         await db.insert(supplyLocations).values(locationRelations);
@@ -1304,8 +1329,7 @@ export class DatabaseStorage implements IStorage {
           locationId: location.locationId,
           onHandQuantity: location.onHandQuantity || 0,
           minimumQuantity: location.minimumQuantity || 0,
-          orderGroupSize: location.orderGroupSize || 1,
-          allocationStatus: location.allocationStatus || false
+          orderGroupSize: location.orderGroupSize || 1
         }));
         
         await db.insert(supplyLocations).values(locationRelations);
@@ -1372,9 +1396,155 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  // Enhanced inventory management (new)
+  async checkInInventory(supplyId: number, locationId: number, quantity: number, referenceType?: string, referenceId?: number, notes?: string, userId?: number): Promise<void> {
+    await db.insert(supplyTransactions).values({
+      supplyId,
+      type: 'check_in',
+      quantity,
+      description: `Checked in ${quantity} from location ${locationId}`,
+      jobId: referenceId, // Assuming jobId is the referenceId for check-in
+      userId
+    });
+  }
+
+  async checkOutInventory(supplyId: number, locationId: number, quantity: number, referenceType?: string, referenceId?: number, notes?: string, userId?: number): Promise<void> {
+    await db.insert(supplyTransactions).values({
+      supplyId,
+      type: 'check_out',
+      quantity,
+      description: `Checked out ${quantity} to location ${locationId}`,
+      jobId: referenceId, // Assuming jobId is the referenceId for check-out
+      userId
+    });
+  }
+
+  async transferInventory(supplyId: number, fromLocationId: number, toLocationId: number, quantity: number, notes?: string, userId?: number): Promise<void> {
+    await db.insert(supplyTransactions).values({
+      supplyId,
+      type: 'transfer',
+      quantity,
+      description: `Transferred ${quantity} from location ${fromLocationId} to location ${toLocationId}`,
+      jobId: null, // No direct jobId for transfers
+      userId
+    });
+  }
+
+  async adjustInventory(supplyId: number, locationId: number, quantity: number, notes?: string, userId?: number): Promise<void> {
+    await db.insert(supplyTransactions).values({
+      supplyId,
+      type: 'adjust',
+      quantity,
+      description: `Adjusted inventory for location ${locationId} by ${quantity}`,
+      jobId: null, // No direct jobId for adjustments
+      userId
+    });
+  }
+
+  async getInventoryMovements(supplyId?: number, locationId?: number, fromDate?: Date, toDate?: Date): Promise<any[]> {
+    let conditions = [];
+    if (supplyId) {
+      conditions.push(eq(inventoryMovements.supplyId, supplyId));
+    }
+    if (locationId) {
+      conditions.push(or(
+        eq(inventoryMovements.fromLocationId, locationId),
+        eq(inventoryMovements.toLocationId, locationId)
+      ));
+    }
+    if (fromDate) {
+      conditions.push(gte(inventoryMovements.createdAt, fromDate));
+    }
+    if (toDate) {
+      conditions.push(lte(inventoryMovements.createdAt, toDate));
+    }
+
+    return await db.select().from(inventoryMovements)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(inventoryMovements.createdAt));
+  }
+
+  async getInventoryMovement(id: number): Promise<any> {
+    const [movement] = await db.select().from(supplyTransactions).where(eq(supplyTransactions.id, id));
+    return movement;
+  }
+
+  async getNeedToPurchase(): Promise<any[]> {
+    // This is a placeholder. In a real application, you'd query the supply_locations table
+    // to find supplies that are below their minimum quantity.
+    // For now, we'll return a dummy list.
+    return [
+      { supplyId: 1, locationId: 1, currentQuantity: 5, minQuantity: 10, reorderPoint: 8, name: 'Wood', hexColor: '#808080' },
+      { supplyId: 2, locationId: 2, currentQuantity: 2, minQuantity: 5, reorderPoint: 3, name: 'Paint', hexColor: '#FF0000' }
+    ];
+  }
+
+  async getReorderSuggestions(): Promise<any[]> {
+    // This is a placeholder. In a real application, you'd query the supply_locations table
+    // to find supplies that are below their reorder point.
+    // For now, we'll return a dummy list.
+    return [
+      { supplyId: 1, locationId: 1, currentQuantity: 5, reorderPoint: 8, name: 'Wood', hexColor: '#808080' },
+      { supplyId: 2, locationId: 2, currentQuantity: 2, minQuantity: 5, reorderPoint: 3, name: 'Paint', hexColor: '#FF0000' }
+    ];
+  }
+
+  async updateReorderPoint(supplyLocationId: number, reorderPoint: number): Promise<void> {
+    await db.update(supplyLocations).set({ minimumQuantity: reorderPoint }).where(eq(supplyLocations.id, supplyLocationId));
+  }
+
+  async getInventoryAlerts(): Promise<any[]> {
+    // This is a placeholder. In a real application, you'd query the supply_locations table
+    // to find supplies that are below their minimum quantity.
+    // For now, we'll return a dummy list.
+    return [
+      { supplyId: 1, locationId: 1, currentQuantity: 5, minQuantity: 10, name: 'Wood', hexColor: '#808080' },
+      { supplyId: 2, locationId: 2, currentQuantity: 2, minQuantity: 5, name: 'Paint', hexColor: '#FF0000' }
+    ];
+  }
+
+  async resolveInventoryAlert(alertId: number): Promise<void> {
+    // This is a placeholder. In a real application, you'd update the minimum quantity
+    // for the specific supply_location that triggered the alert.
+    // For now, we'll just delete the alert.
+    await db.delete(supplyTransactions).where(eq(supplyTransactions.id, alertId));
+  }
+
+  // Location categories
+  async getAllLocationCategories(): Promise<any[]> {
+    // This is a placeholder. In a real application, you'd query the location_categories table.
+    return [];
+  }
+
+  async createLocationCategory(category: any): Promise<any> {
+    // This is a placeholder. In a real application, you'd insert into the location_categories table.
+    return { id: 1, name: 'Default Category' };
+  }
+
+  async updateLocationCategory(id: number, category: any): Promise<void> {
+    // This is a placeholder. In a real application, you'd update the location_categories table.
+  }
+
+  async deleteLocationCategory(id: number): Promise<void> {
+    // This is a placeholder. In a real application, you'd delete from the location_categories table.
+  }
+
   // Location management methods
   async getAllLocations(): Promise<Location[]> {
-    return await db.select().from(locations).orderBy(locations.name);
+    const results = await db
+      .select({
+        id: locations.id,
+        name: locations.name,
+        isActive: locations.isActive,
+        createdAt: locations.createdAt,
+        itemCount: sql<number>`COUNT(DISTINCT CASE WHEN ${supplyLocations.onHandQuantity} > 0 THEN ${supplyLocations.supplyId} END)`.as('itemCount')
+      })
+      .from(locations)
+      .leftJoin(supplyLocations, eq(supplyLocations.locationId, locations.id))
+      .groupBy(locations.id, locations.name, locations.isActive, locations.createdAt)
+      .orderBy(locations.name);
+
+    return results as unknown as Location[];
   }
 
   async createLocation(location: InsertLocation): Promise<Location> {
@@ -1382,12 +1552,16 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async updateLocation(id: number, name: string): Promise<void> {
-    await db.update(locations).set({ name }).where(eq(locations.id, id));
+  async updateLocation(id: number, name: string, description?: string): Promise<void> {
+    await db.update(locations).set({ name, description }).where(eq(locations.id, id));
   }
 
   async deleteLocation(id: number): Promise<void> {
     await db.delete(locations).where(eq(locations.id, id));
+  }
+
+  async toggleLocationActive(id: number, isActive: boolean): Promise<void> {
+    await db.update(locations).set({ isActive }).where(eq(locations.id, id));
   }
 
   async getSuppliesAtLocation(locationId: number): Promise<any[]> {
@@ -1407,8 +1581,7 @@ export class DatabaseStorage implements IStorage {
         updatedAt: supplies.updatedAt,
         onHandQuantity: supplyLocations.onHandQuantity,
         minimumQuantity: supplyLocations.minimumQuantity,
-        orderGroupSize: supplyLocations.orderGroupSize,
-        allocationStatus: supplyLocations.allocationStatus
+                 orderGroupSize: supplyLocations.orderGroupSize
       })
       .from(supplies)
       .innerJoin(supplyLocations, eq(supplies.id, supplyLocations.supplyId))
@@ -1588,26 +1761,59 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getVendorsForSupply(supplyId: number): Promise<Vendor[]> {
-    const supplyVendorData = await db
-      .select({
-        id: vendors.id,
-        company: vendors.company,
-        contact_info: vendors.contact_info,
-        address: vendors.address,
-        phone: vendors.phone,
-        email: vendors.email,
-        createdAt: vendors.createdAt,
-        updatedAt: vendors.updatedAt,
-        price: supplyVendors.price,
-        vendorPartNumber: supplyVendors.vendorPartNumber,
-        isPreferred: supplyVendors.isPreferred
-      })
-      .from(vendors)
-      .innerJoin(supplyVendors, eq(vendors.id, supplyVendors.vendorId))
-      .where(eq(supplyVendors.supplyId, supplyId))
-      .orderBy(vendors.company);
+    try {
+      // First try to get vendors specifically for this supply
+      const supplyVendorData = await db
+        .select({
+          id: vendors.id,
+          name: vendors.name,
+          company: vendors.company,
+          contact_info: vendors.contactInfo,
+          address: vendors.address,
+          phone: vendors.phone,
+          email: vendors.email,
+          createdAt: vendors.createdAt,
+          updatedAt: vendors.updatedAt,
+          price: supplyVendors.price,
+          vendorPartNumber: supplyVendors.vendorPartNumber,
+          isPreferred: supplyVendors.isPreferred
+        })
+        .from(vendors)
+        .innerJoin(supplyVendors, eq(vendors.id, supplyVendors.vendorId))
+        .where(eq(supplyVendors.supplyId, supplyId))
+        .orderBy(vendors.company);
 
-    return supplyVendorData;
+      // If we found specific vendors for this supply, return them
+      if (supplyVendorData.length > 0) {
+        return supplyVendorData;
+      }
+
+      // Fallback: return all vendors if no specific ones found
+      console.log(`No specific vendors found for supply ${supplyId}, returning all vendors as fallback`);
+      const allVendors = await db
+        .select({
+          id: vendors.id,
+          name: vendors.name,
+          company: vendors.company,
+          contact_info: vendors.contactInfo,
+          address: vendors.address,
+          phone: vendors.phone,
+          email: vendors.email,
+          createdAt: vendors.createdAt,
+          updatedAt: vendors.updatedAt,
+          price: sql<number>`0`.as('price'), // Default price when no specific pricing
+          vendorPartNumber: sql<string>`''`.as('vendorPartNumber'), // Default part number
+          isPreferred: sql<boolean>`false`.as('isPreferred') // Default preference
+        })
+        .from(vendors)
+        .orderBy(vendors.company);
+
+      return allVendors;
+    } catch (error) {
+      console.error(`Error getting vendors for supply ${supplyId}:`, error);
+      // Return empty array on error
+      return [];
+    }
   }
 }
 

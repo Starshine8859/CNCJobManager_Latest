@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Calendar, Plus, Search, Filter, Package, DollarSign, Clock, CheckCircle, AlertCircle, Truck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,11 +65,29 @@ export default function PurchaseOrders() {
       if (fromDate) params.set("fromDate", fromDate);
       if (toDate) params.set("toDate", toDate);
       
-      const response = await fetch(`/api/purchase-orders?${params}`);
-      if (!response.ok) throw new Error("Failed to fetch purchase orders");
-      return response.json();
+             const response = await fetch(`/api/purchase-orders/enhanced?${params}`);
+       if (!response.ok) throw new Error("Failed to fetch purchase orders");
+       return response.json();
     }
   });
+
+  // Fetch all vendors for mapping vendorId -> company
+  const { data: vendors = [] } = useQuery({
+    queryKey: ["vendors"],
+    queryFn: async () => {
+      const res = await fetch("/api/vendors");
+      if (!res.ok) throw new Error("Failed to fetch vendors");
+      return res.json();
+    }
+  });
+
+  const vendorCompanyById = useMemo(() => {
+    const map: Record<number, string> = {};
+    for (const v of vendors as any[]) {
+      map[v.id] = v.company ?? v.name ?? "-";
+    }
+    return map;
+  }, [vendors]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -120,7 +138,7 @@ export default function PurchaseOrders() {
   };
 
   const getTotalValue = () => {
-    return filteredPurchaseOrders.reduce((sum, po) => sum + po.totalAmount, 0);
+    return (filteredPurchaseOrders as any[]).reduce((sum: number, po: any) => sum + (po.totalAmount || 0), 0);
   };
 
   return (
@@ -290,94 +308,35 @@ export default function PurchaseOrders() {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-4">
-                {filteredPurchaseOrders.map((po: PurchaseOrder) => (
-                  <Card key={po.id} className="group hover:shadow-xl transition-all duration-300 border-0 bg-white/80 backdrop-blur-sm hover:-translate-y-1 overflow-hidden">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-blue-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
-                    
-                    <CardHeader className="pb-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
-                          <div className="p-3 bg-gradient-to-r from-indigo-100 to-blue-100 rounded-xl">
-                            <FileText className="w-5 h-5 text-indigo-600" />
-                          </div>
-                          <div>
-                            <CardTitle className="text-xl font-bold text-gray-900 mb-1">{po.poNumber}</CardTitle>
-                            <p className="text-sm text-gray-500 flex items-center space-x-2">
-                              <span>Created by {po.createdByUser.username}</span>
-                              <span>•</span>
-                              <span>{formatDate(po.dateOrdered)}</span>
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-4">
-                          <Badge className={`${getStatusBadgeColor(po.status)} border flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold rounded-full`}>
-                            {getStatusIcon(po.status)}
-                            <span>{po.status.charAt(0).toUpperCase() + po.status.slice(1)}</span>
-                          </Badge>
-                          <div className="text-right">
-                            <p className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent">
-                              {formatCurrency(po.totalAmount)}
-                            </p>
-                            <p className="text-xs text-gray-500 font-medium">Total Amount</p>
-                          </div>
-                        </div>
-                      </div>
-                    </CardHeader>
-
-                    <CardContent className="pt-0">
-                      <div className="space-y-3">
-                        {po.items.map((item, index) => (
-                          <div key={item.id} className={`flex items-center justify-between py-3 px-4 rounded-lg transition-all duration-200 ${index % 2 === 0 ? 'bg-gray-50/50' : 'bg-blue-50/30'} hover:bg-indigo-50/50 group/item`}>
-                            <div className="flex-1">
-                              <div className="flex items-center space-x-3">
-                                <div className="p-2 bg-white rounded-lg shadow-sm">
-                                  <Package className="w-4 h-4 text-gray-500" />
-                                </div>
-                                <div>
-                                  <p className="font-semibold text-gray-900 group-hover/item:text-indigo-700 transition-colors">
-                                    {item.supply.name}
-                                  </p>
-                                  <div className="flex items-center space-x-4 text-sm text-gray-500 mt-1">
-                                    <span className="flex items-center space-x-1">
-                                      <span className="w-2 h-2 bg-blue-400 rounded-full"></span>
-                                      <span>{item.vendor.name}</span>
-                                    </span>
-                                    <span>Qty: <span className="font-medium text-gray-700">{item.quantity}</span></span>
-                                    <span>Price: <span className="font-medium text-gray-700">{formatCurrency(item.pricePerUnit)}/unit</span></span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="text-right ml-4">
-                              <p className="text-lg font-bold text-gray-900">{formatCurrency(item.totalPrice)}</p>
-                              <div className="flex items-center space-x-2 mt-1">
-                                <span className="text-xs text-gray-500">Stock:</span>
-                                <Badge className={`text-xs px-2 py-0.5 ${item.supply.quantityOnHand > 10 ? 'bg-green-100 text-green-700' : item.supply.quantityOnHand > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
-                                  {item.supply.quantityOnHand}
-                                </Badge>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                        
-                        {po.additionalComments && (
-                          <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-100">
-                            <div className="flex items-start space-x-3">
-                              <div className="p-1.5 bg-blue-100 rounded-lg">
-                                <FileText className="w-4 h-4 text-blue-600" />
-                              </div>
-                              <div>
-                                <p className="text-sm font-semibold text-blue-800 mb-1">Additional Comments</p>
-                                <p className="text-sm text-blue-700 leading-relaxed">{po.additionalComments}</p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+              <div className="overflow-hidden rounded-xl border border-gray-200 bg-white/80 backdrop-blur-sm shadow-sm">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50/60">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">PO#</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Date ordered</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Date received</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Company</th>
+                      <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Total price</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-100">
+                    {(filteredPurchaseOrders as any[]).map((po: any) => {
+                      const firstVendorId = po.items?.[0]?.vendorId as number | undefined;
+                      const company = firstVendorId ? (vendorCompanyById[firstVendorId] ?? "-") : "-";
+                      const dateOrdered = po.dateOrdered ?? po.createdAt;
+                      const dateReceived = po.dateReceived;
+                      return (
+                        <tr key={po.id} className="hover:bg-indigo-50/40 transition-colors">
+                          <td className="px-6 py-3 text-sm font-semibold text-gray-900">{po.poNumber}</td>
+                          <td className="px-6 py-3 text-sm text-gray-700">{dateOrdered ? new Date(dateOrdered).toLocaleDateString() : "-"}</td>
+                          <td className="px-6 py-3 text-sm text-gray-700">{dateReceived ? new Date(dateReceived).toLocaleDateString() : "-"}</td>
+                          <td className="px-6 py-3 text-sm text-gray-700">{company}</td>
+                          <td className="px-6 py-3 text-sm font-semibold text-gray-900 text-right">{formatCurrency(po.totalAmount)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

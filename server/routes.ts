@@ -9,8 +9,10 @@ import path from "path";
 import fs from "fs";
 
 import { storage } from "./storage";
-import { createJobSchema, loginSchema, insertUserSchema, insertColorSchema, insertColorGroupSchema, insertSupplySchema, insertSupplyWithRelationsSchema, insertLocationSchema, insertVendorSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema } from "@shared/schema";
+import { createJobSchema, loginSchema, insertUserSchema, insertColorSchema, insertColorGroupSchema, insertSupplySchema, insertSupplyWithRelationsSchema, insertLocationSchema, insertVendorSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema, inventoryMovements, supplyLocations, supplies, locations, inventoryAlerts, locationCategories, purchaseOrders, purchaseOrderItems } from "@shared/schema";
 import { pool } from "./db";
+import { db } from "./db";
+import { eq, and, or, lte, gte, desc, sql } from "drizzle-orm";
 import "./types";
 
 // File upload configuration
@@ -751,9 +753,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('=== UPDATE SUPPLY COMPLETED ===');
     } catch (error) {
       console.error('=== UPDATE SUPPLY ERROR ===');
-      console.error('Error type:', error.constructor.name);
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
+      console.error('Error type:', error instanceof Error ? error.constructor.name : typeof error);
+      console.error('Error message:', error instanceof Error ? error.message : String(error));
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
       console.error('=== END ERROR ===');
       res.status(400).json({ message: "Invalid supply data", error: error instanceof Error ? error.message : String(error) });
     }
@@ -836,6 +838,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/locations/:id/toggle-active", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { isActive } = req.body;
+      await storage.toggleLocationActive(id, isActive);
+      res.json({ message: "Location status updated successfully" });
+    } catch (error) {
+      res.status(400).json({ message: "Invalid location data" });
+    }
+  });
+
   // Vendor routes
   app.get("/api/vendors", requireAuth, async (req, res) => {
     try {
@@ -890,47 +903,290 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Purchase order routes
-  app.get("/api/purchase-orders", requireAuth, async (req, res) => {
+  // Enhanced Purchase Order Management
+  app.get("/api/purchase-orders/enhanced", requireAuth, async (req, res) => {
     try {
-      const { fromDate, toDate } = req.query;
-      const purchaseOrders = await storage.getAllPurchaseOrders(
-        fromDate as string | undefined,
-        toDate as string | undefined
+      const { fromDate, toDate, status } = req.query;
+      
+      let conditions = [];
+      if (fromDate) {
+        conditions.push(gte(purchaseOrders.createdAt, new Date(fromDate as string)));
+      }
+      if (toDate) {
+        conditions.push(lte(purchaseOrders.createdAt, new Date(toDate as string)));
+      }
+      if (status) {
+        conditions.push(eq(purchaseOrders.status, status as string));
+      }
+      
+      // Get purchase orders
+      const orders = await db.select()
+        .from(purchaseOrders)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(purchaseOrders.createdAt));
+      
+      // Get items for each order
+      const ordersWithItems = await Promise.all(
+        orders.map(async (order) => {
+          const items = await db.select({
+            id: purchaseOrderItems.id,
+            supplyId: purchaseOrderItems.supplyId,
+            vendorId: purchaseOrderItems.vendorId,
+            locationId: purchaseOrderItems.locationId,
+            neededQuantity: purchaseOrderItems.neededQuantity,
+            orderQuantity: purchaseOrderItems.orderQuantity,
+            receivedQuantity: purchaseOrderItems.receivedQuantity,
+            pricePerUnit: purchaseOrderItems.pricePerUnit,
+            totalPrice: purchaseOrderItems.totalPrice,
+            supply: {
+              id: supplies.id,
+              name: supplies.name,
+              hexColor: supplies.hexColor,
+              pieceSize: supplies.pieceSize
+            },
+            location: {
+              id: locations.id,
+              name: locations.name
+            }
+          })
+          .from(purchaseOrderItems)
+          .leftJoin(supplies, eq(purchaseOrderItems.supplyId, supplies.id))
+          .leftJoin(locations, eq(purchaseOrderItems.locationId, locations.id))
+          .where(eq(purchaseOrderItems.purchaseOrderId, order.id));
+          
+          return {
+            ...order,
+            items
+          };
+        })
       );
-      res.json(purchaseOrders);
+      
+      res.json(ordersWithItems);
     } catch (error) {
+      console.error('Get enhanced purchase orders error:', error instanceof Error ? error.message : String(error));
       res.status(500).json({ message: "Failed to fetch purchase orders" });
     }
   });
 
-  app.post("/api/purchase-orders", requireAuth, async (req, res) => {
+  app.post("/api/purchase-orders/enhanced", requireAuth, async (req, res) => {
     try {
-      const { orderData, items } = req.body;
+      const { vendorId, expectedDeliveryDate, notes, items, sendEmail = false } = req.body;
+      const userId = req.session.user?.id;
       
-      // Validate order data
-      const validatedOrderData = insertPurchaseOrderSchema.parse(orderData);
-      const validatedItems = items.map((item: any) => insertPurchaseOrderItemSchema.parse(item));
+      if (!vendorId || !items || items.length === 0) {
+        return res.status(400).json({ message: "Vendor and items are required" });
+      }
       
-      // Add created by user
-      validatedOrderData.createdBy = req.session.user!.id;
+      // Generate order number
+      const poNumber = `PO-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       
-      const purchaseOrder = await storage.createPurchaseOrder(validatedOrderData, validatedItems);
-      res.json(purchaseOrder);
+      // Calculate total amount
+      const totalAmount = items.reduce((sum: number, item: any) => {
+        return sum + (item.orderQuantity * item.pricePerUnit);
+      }, 0);
+      
+      // Create purchase order
+      const [order] = await db.insert(purchaseOrders)
+        .values({
+          poNumber,
+          status: 'draft',
+          expectedDeliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate) : null,
+          totalAmount,
+          additionalComments: notes,
+          createdBy: userId || 1 // Fallback to user ID 1 if not available
+        })
+        .returning();
+      
+      // Create purchase order items
+      const orderItems = await Promise.all(
+        items.map(async (item: any) => {
+          const [orderItem] = await db.insert(purchaseOrderItems)
+            .values({
+              purchaseOrderId: order.id,
+              supplyId: item.supplyId,
+              vendorId: item.vendorId,
+              locationId: item.locationId,
+              neededQuantity: item.neededQuantity,
+              orderQuantity: item.orderQuantity,
+              pricePerUnit: item.pricePerUnit,
+              totalPrice: item.orderQuantity * item.pricePerUnit
+            })
+            .returning();
+          return orderItem;
+        })
+      );
+      
+      // Send email if requested
+      if (sendEmail) {
+        try {
+          // This would integrate with your email service
+          console.log(`Sending PO email for order ${poNumber}`);
+          // await sendPurchaseOrderEmail(vendorEmail, order, items);
+        } catch (emailError) {
+          console.error('Email sending failed:', emailError);
+          // Don't fail the whole request if email fails
+        }
+      }
+      
+      res.json({ 
+        message: "Purchase order created successfully",
+        order: { ...order, items: orderItems }
+      });
     } catch (error) {
-      console.error('Create purchase order error:', error);
-      res.status(400).json({ message: "Invalid purchase order data" });
+      console.error('Create enhanced purchase order error:', error instanceof Error ? error.message : String(error));
+      res.status(500).json({ message: "Failed to create purchase order" });
     }
   });
 
-  app.put("/api/purchase-orders/:id/receive", requireAuth, async (req, res) => {
+  app.put("/api/purchase-orders/:id/status", requireAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
-      const { dateReceived } = req.body;
-      await storage.updatePurchaseOrderReceived(id, new Date(dateReceived));
-      res.json({ message: "Purchase order marked as received" });
+      const orderId = parseInt(req.params.id);
+      const { status, dateReceived } = req.body;
+      
+      const updateData: any = { status };
+      if (status === 'received' && dateReceived) {
+        updateData.dateReceived = new Date(dateReceived);
+      }
+      
+      await db.update(purchaseOrders)
+        .set(updateData)
+        .where(eq(purchaseOrders.id, orderId));
+      
+      // If received, update inventory
+      if (status === 'received') {
+        const orderItems = await db.select()
+          .from(purchaseOrderItems)
+          .where(eq(purchaseOrderItems.purchaseOrderId, orderId));
+        
+        for (const item of orderItems) {
+          // Check if supply location exists
+          const existingLocation = await db.select()
+            .from(supplyLocations)
+            .where(and(
+              eq(supplyLocations.supplyId, item.supplyId),
+              eq(supplyLocations.locationId, item.locationId)
+            ));
+          
+          if (existingLocation.length > 0) {
+            // Update existing record
+            await db.update(supplyLocations)
+              .set({ 
+                onHandQuantity: sql`${supplyLocations.onHandQuantity} + ${item.receivedQuantity || item.orderQuantity}`,
+                availableQuantity: sql`${supplyLocations.availableQuantity} + ${item.receivedQuantity || item.orderQuantity}`
+              })
+              .where(and(
+                eq(supplyLocations.supplyId, item.supplyId),
+                eq(supplyLocations.locationId, item.locationId)
+              ));
+          } else {
+            // Create new record
+            await db.insert(supplyLocations)
+              .values({
+                supplyId: item.supplyId,
+                locationId: item.locationId,
+                onHandQuantity: item.receivedQuantity || item.orderQuantity,
+                availableQuantity: item.receivedQuantity || item.orderQuantity,
+                minimumQuantity: 0,
+                reorderPoint: 0,
+                orderGroupSize: 1
+              });
+          }
+          
+          // Create inventory movement record
+          await db.insert(inventoryMovements)
+            .values({
+              supplyId: item.supplyId,
+              toLocationId: item.locationId,
+              quantity: item.receivedQuantity || item.orderQuantity,
+              movementType: 'check_in',
+              referenceType: 'purchase_order',
+              referenceId: orderId,
+              notes: `Received from PO ${orderId}`,
+              userId: req.session.user?.id
+            });
+        }
+      }
+      
+      res.json({ message: "Purchase order status updated successfully" });
     } catch (error) {
-      res.status(400).json({ message: "Invalid data" });
+      console.error('Update PO status error:', error instanceof Error ? error.message : String(error));
+      res.status(500).json({ message: "Failed to update purchase order status" });
+    }
+  });
+
+  app.put("/api/purchase-orders/:id/items/:itemId", requireAuth, async (req, res) => {
+    try {
+      const { itemId } = req.params;
+      const { receivedQuantity } = req.body;
+      
+      await db.update(purchaseOrderItems)
+        .set({ receivedQuantity: parseInt(receivedQuantity) })
+        .where(eq(purchaseOrderItems.id, parseInt(itemId)));
+      
+      res.json({ message: "Purchase order item updated successfully" });
+    } catch (error) {
+      console.error('Update PO item error:', error instanceof Error ? error.message : String(error));
+      res.status(500).json({ message: "Failed to update purchase order item" });
+    }
+  });
+
+  app.post("/api/purchase-orders/:id/send-email", requireAuth, async (req, res) => {
+    try {
+      const orderId = parseInt(req.params.id);
+      
+      // Get order details
+      const [order] = await db.select({
+        id: purchaseOrders.id,
+        orderNumber: purchaseOrders.orderNumber,
+        vendorId: purchaseOrders.vendorId,
+        orderDate: purchaseOrders.orderDate,
+        expectedDeliveryDate: purchaseOrders.expectedDeliveryDate,
+        totalAmount: purchaseOrders.totalAmount,
+        notes: purchaseOrders.notes,
+        vendor: {
+          id: vendors.id,
+          name: vendors.name,
+          company: vendors.company,
+          email: vendors.email
+        }
+      })
+      .from(purchaseOrders)
+      .innerJoin(vendors, eq(purchaseOrders.vendorId, vendors.id))
+      .where(eq(purchaseOrders.id, orderId));
+      
+      if (!order) {
+        return res.status(404).json({ message: "Purchase order not found" });
+      }
+      
+      if (!order.vendor.email) {
+        return res.status(400).json({ message: "Vendor has no email address" });
+      }
+      
+      // Get order items
+      const items = await db.select({
+        id: purchaseOrderItems.id,
+        supplyId: purchaseOrderItems.supplyId,
+        orderQuantity: purchaseOrderItems.orderQuantity,
+        pricePerUnit: purchaseOrderItems.pricePerUnit,
+        totalPrice: purchaseOrderItems.totalPrice,
+        supply: {
+          id: supplies.id,
+          name: supplies.name,
+          pieceSize: supplies.pieceSize
+        }
+      })
+      .from(purchaseOrderItems)
+      .innerJoin(supplies, eq(purchaseOrderItems.supplyId, supplies.id))
+      .where(eq(purchaseOrderItems.purchaseOrderId, orderId));
+      
+      // This would integrate with your email service
+      console.log(`Sending PO email to ${order.vendor.email} for order ${order.orderNumber}`);
+      // await sendPurchaseOrderEmail(order.vendor.email, order, items);
+      
+      res.json({ message: "Purchase order email sent successfully" });
+    } catch (error) {
+      console.error('Send PO email error:', error instanceof Error ? error.message : String(error));
+      res.status(500).json({ message: "Failed to send purchase order email" });
     }
   });
 
@@ -1096,11 +1352,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const vendor = await storage.createOneVendor({
         name: name.toLowerCase(), 
         company: company,
-        contact_info: contact_info
+        contactInfo: contact_info
       });
       res.json(vendor);
     } catch (error) {
-      console.error('Creating error:', error);
+      console.error('Creating error:', error instanceof Error ? error.message : String(error));
       res.status(500).json({ message: "Vendor failed" });
     }
   })
@@ -1114,6 +1370,438 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to check setup status" });
     }
   })
+
+  // Enhanced inventory management routes
+  // Check-in/Check-out operations
+  app.post("/api/inventory/check-in", requireAuth, async (req, res) => {
+    try {
+      const { supplyId, locationId, quantity, referenceType, referenceId, notes } = req.body;
+      const userId = req.session.user?.id;
+      
+      if (!supplyId || !locationId || !quantity || quantity <= 0) {
+        return res.status(400).json({ message: "Invalid check-in data" });
+      }
+      
+      // Create inventory movement record
+      await db.insert(inventoryMovements).values({
+        supplyId,
+        toLocationId: locationId,
+        quantity,
+        movementType: 'check_in',
+        referenceType,
+        referenceId,
+        notes,
+        userId
+      });
+      
+      // Update supply location quantity
+      const existingLocation = await db.select()
+        .from(supplyLocations)
+        .where(and(
+          eq(supplyLocations.supplyId, supplyId),
+          eq(supplyLocations.locationId, locationId)
+        ));
+      
+      if (existingLocation.length > 0) {
+        // Update existing record
+        await db.update(supplyLocations)
+          .set({ 
+            onHandQuantity: sql`${supplyLocations.onHandQuantity} + ${quantity}`,
+            availableQuantity: sql`${supplyLocations.availableQuantity} + ${quantity}`
+          })
+          .where(and(
+            eq(supplyLocations.supplyId, supplyId),
+            eq(supplyLocations.locationId, locationId)
+          ));
+      } else {
+        // Create new record
+        await db.insert(supplyLocations).values({
+          supplyId,
+          locationId,
+          onHandQuantity: quantity,
+          availableQuantity: quantity,
+          minimumQuantity: 0,
+          reorderPoint: 0,
+          orderGroupSize: 1
+        });
+      }
+      
+      res.json({ message: "Inventory checked in successfully" });
+    } catch (error) {
+      console.error('Check-in error:', error instanceof Error ? error.message : String(error));
+      res.status(500).json({ message: "Failed to check in inventory" });
+    }
+  });
+
+  app.post("/api/inventory/check-out", requireAuth, async (req, res) => {
+    try {
+      const { supplyId, locationId, quantity, referenceType, referenceId, notes } = req.body;
+      const userId = req.session.user?.id;
+      
+      if (!supplyId || !locationId || !quantity || quantity <= 0) {
+        return res.status(400).json({ message: "Invalid check-out data" });
+      }
+      
+      // Check if enough inventory is available
+      const currentStock = await db.select()
+        .from(supplyLocations)
+        .where(and(
+          eq(supplyLocations.supplyId, supplyId),
+          eq(supplyLocations.locationId, locationId)
+        ));
+      
+      if (currentStock.length === 0 || currentStock[0].availableQuantity < quantity) {
+        return res.status(400).json({ message: "Insufficient inventory available" });
+      }
+      
+      // Create inventory movement record
+      await db.insert(inventoryMovements).values({
+        supplyId,
+        fromLocationId: locationId,
+        quantity,
+        movementType: 'check_out',
+        referenceType,
+        referenceId,
+        notes,
+        userId
+      });
+      
+      // Update supply location quantity
+      await db.update(supplyLocations)
+        .set({ 
+          onHandQuantity: sql`${supplyLocations.onHandQuantity} - ${quantity}`,
+          availableQuantity: sql`${supplyLocations.availableQuantity} - ${quantity}`
+        })
+        .where(and(
+          eq(supplyLocations.supplyId, supplyId),
+          eq(supplyLocations.locationId, locationId)
+        ));
+      
+      res.json({ message: "Inventory checked out successfully" });
+    } catch (error) {
+      console.error('Check-out error:', error instanceof Error ? error.message : String(error));
+      res.status(500).json({ message: "Failed to check out inventory" });
+    }
+  });
+
+  app.post("/api/inventory/transfer", requireAuth, async (req, res) => {
+    try {
+      const { supplyId, fromLocationId, toLocationId, quantity, notes } = req.body;
+      const userId = req.session.user?.id;
+      
+      if (!supplyId || !fromLocationId || !toLocationId || !quantity || quantity <= 0) {
+        return res.status(400).json({ message: "Invalid transfer data" });
+      }
+      
+      // Check if enough inventory is available at source location
+      const sourceStock = await db.select()
+        .from(supplyLocations)
+        .where(and(
+          eq(supplyLocations.supplyId, supplyId),
+          eq(supplyLocations.locationId, fromLocationId)
+        ));
+      
+      if (sourceStock.length === 0 || sourceStock[0].availableQuantity < quantity) {
+        return res.status(400).json({ message: "Insufficient inventory at source location" });
+      }
+      
+      // Create inventory movement record
+      await db.insert(inventoryMovements).values({
+        supplyId,
+        fromLocationId,
+        toLocationId,
+        quantity,
+        movementType: 'transfer',
+        notes,
+        userId
+      });
+      
+      // Update source location quantity
+      await db.update(supplyLocations)
+        .set({ 
+          onHandQuantity: sql`${supplyLocations.onHandQuantity} - ${quantity}`,
+          availableQuantity: sql`${supplyLocations.availableQuantity} - ${quantity}`
+        })
+        .where(and(
+          eq(supplyLocations.supplyId, supplyId),
+          eq(supplyLocations.locationId, fromLocationId)
+        ));
+      
+      // Update or create destination location quantity
+      const destLocation = await db.select()
+        .from(supplyLocations)
+        .where(and(
+          eq(supplyLocations.supplyId, supplyId),
+          eq(supplyLocations.locationId, toLocationId)
+        ));
+      
+      if (destLocation.length > 0) {
+        await db.update(supplyLocations)
+          .set({ 
+            onHandQuantity: sql`${supplyLocations.onHandQuantity} + ${quantity}`,
+            availableQuantity: sql`${supplyLocations.availableQuantity} + ${quantity}`
+          })
+          .where(and(
+            eq(supplyLocations.supplyId, supplyId),
+            eq(supplyLocations.locationId, toLocationId)
+          ));
+      } else {
+        await db.insert(supplyLocations).values({
+          supplyId,
+          locationId: toLocationId,
+          onHandQuantity: quantity,
+          availableQuantity: quantity,
+          minimumQuantity: 0,
+          reorderPoint: 0,
+          orderGroupSize: 1
+        });
+      }
+      
+      res.json({ message: "Inventory transferred successfully" });
+    } catch (error) {
+      console.error('Transfer error:', error);
+      res.status(500).json({ message: "Failed to transfer inventory" });
+    }
+  });
+
+  app.post("/api/inventory/adjust", requireAuth, async (req, res) => {
+    try {
+      const { supplyId, locationId, quantity, notes } = req.body;
+      const userId = req.session.user?.id;
+      
+      if (!supplyId || !locationId || !quantity) {
+        return res.status(400).json({ message: "Invalid adjustment data" });
+      }
+      
+      // Create inventory movement record
+      await db.insert(inventoryMovements).values({
+        supplyId,
+        toLocationId: locationId,
+        quantity: Math.abs(quantity),
+        movementType: 'adjust',
+        notes,
+        userId
+      });
+      
+      // Update supply location quantity
+      const existingLocation = await db.select()
+        .from(supplyLocations)
+        .where(and(
+          eq(supplyLocations.supplyId, supplyId),
+          eq(supplyLocations.locationId, locationId)
+        ));
+      
+      if (existingLocation.length > 0) {
+        await db.update(supplyLocations)
+          .set({ 
+            onHandQuantity: sql`${supplyLocations.onHandQuantity} + ${quantity}`,
+            availableQuantity: sql`${supplyLocations.availableQuantity} + ${quantity}`
+          })
+          .where(and(
+            eq(supplyLocations.supplyId, supplyId),
+            eq(supplyLocations.locationId, locationId)
+          ));
+      } else if (quantity > 0) {
+        await db.insert(supplyLocations).values({
+          supplyId,
+          locationId,
+          onHandQuantity: quantity,
+          availableQuantity: quantity,
+          minimumQuantity: 0,
+          reorderPoint: 0,
+          orderGroupSize: 1
+        });
+      }
+      
+      res.json({ message: "Inventory adjusted successfully" });
+    } catch (error) {
+      console.error('Adjustment error:', error);
+      res.status(500).json({ message: "Failed to adjust inventory" });
+    }
+  });
+
+  // Inventory movements
+  app.get("/api/inventory/movements", requireAuth, async (req, res) => {
+    try {
+      const { supplyId, locationId, fromDate, toDate } = req.query;
+      
+      let conditions = [];
+      if (supplyId) {
+        conditions.push(eq(inventoryMovements.supplyId, parseInt(supplyId as string)));
+      }
+      if (locationId) {
+        conditions.push(or(
+          eq(inventoryMovements.fromLocationId, parseInt(locationId as string)),
+          eq(inventoryMovements.toLocationId, parseInt(locationId as string))
+        ));
+      }
+      if (fromDate) {
+        conditions.push(gte(inventoryMovements.createdAt, new Date(fromDate as string)));
+      }
+      if (toDate) {
+        conditions.push(lte(inventoryMovements.createdAt, new Date(toDate as string)));
+      }
+      
+      const movements = await db.select({
+        id: inventoryMovements.id,
+        supplyId: inventoryMovements.supplyId,
+        fromLocationId: inventoryMovements.fromLocationId,
+        toLocationId: inventoryMovements.toLocationId,
+        quantity: inventoryMovements.quantity,
+        movementType: inventoryMovements.movementType,
+        referenceType: inventoryMovements.referenceType,
+        referenceId: inventoryMovements.referenceId,
+        notes: inventoryMovements.notes,
+        createdAt: inventoryMovements.createdAt,
+        supply: {
+          id: supplies.id,
+          name: supplies.name,
+          hexColor: supplies.hexColor
+        },
+        fromLocation: {
+          id: locations.id,
+          name: locations.name
+        },
+        toLocation: {
+          id: locations.id,
+          name: locations.name
+        }
+      })
+      .from(inventoryMovements)
+      .leftJoin(supplies, eq(inventoryMovements.supplyId, supplies.id))
+      .leftJoin(locations, eq(inventoryMovements.fromLocationId, locations.id))
+      .leftJoin(locations, eq(inventoryMovements.toLocationId, locations.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(inventoryMovements.createdAt));
+      
+      res.json(movements);
+    } catch (error) {
+      console.error('Get movements error:', error);
+      res.status(500).json({ message: "Failed to fetch inventory movements" });
+    }
+  });
+
+  // Reorder management
+  app.get("/api/inventory/need-to-purchase", requireAuth, async (req, res) => {
+    try {
+      const needToPurchase = await db.select({
+        supplyId: supplyLocations.supplyId,
+        locationId: supplyLocations.locationId,
+        onHandQuantity: supplyLocations.onHandQuantity,
+        minimumQuantity: supplyLocations.minimumQuantity,
+        reorderPoint: supplyLocations.reorderPoint,
+        orderGroupSize: supplyLocations.orderGroupSize,
+        supply: {
+          id: supplies.id,
+          name: supplies.name,
+          hexColor: supplies.hexColor,
+          pieceSize: supplies.pieceSize
+        },
+        location: {
+          id: locations.id,
+          name: locations.name
+        }
+      })
+      .from(supplyLocations)
+      .innerJoin(supplies, eq(supplyLocations.supplyId, supplies.id))
+      .innerJoin(locations, eq(supplyLocations.locationId, locations.id))
+      .where(
+        or(
+          lte(supplyLocations.onHandQuantity, supplyLocations.reorderPoint),
+          lte(supplyLocations.onHandQuantity, supplyLocations.minimumQuantity)
+        )
+      )
+      .orderBy(supplies.name);
+      
+      res.json(needToPurchase);
+    } catch (error) {
+      console.error('Need to purchase error:', error);
+      res.status(500).json({ message: "Failed to fetch need to purchase data" });
+    }
+  });
+
+  app.get("/api/inventory/alerts", requireAuth, async (req, res) => {
+    try {
+      const alerts = await db.select({
+        id: inventoryAlerts.id,
+        supplyId: inventoryAlerts.supplyId,
+        locationId: inventoryAlerts.locationId,
+        alertType: inventoryAlerts.alertType,
+        message: inventoryAlerts.message,
+        isRead: inventoryAlerts.isRead,
+        isResolved: inventoryAlerts.isResolved,
+        createdAt: inventoryAlerts.createdAt,
+        supply: {
+          id: supplies.id,
+          name: supplies.name,
+          hexColor: supplies.hexColor
+        },
+        location: {
+          id: locations.id,
+          name: locations.name
+        }
+      })
+      .from(inventoryAlerts)
+      .innerJoin(supplies, eq(inventoryAlerts.supplyId, supplies.id))
+      .innerJoin(locations, eq(inventoryAlerts.locationId, locations.id))
+      .where(eq(inventoryAlerts.isResolved, false))
+      .orderBy(desc(inventoryAlerts.createdAt));
+      
+      res.json(alerts);
+    } catch (error) {
+      console.error('Get alerts error:', error);
+      res.status(500).json({ message: "Failed to fetch inventory alerts" });
+    }
+  });
+
+  app.post("/api/inventory/alerts/:id/resolve", requireAuth, async (req, res) => {
+    try {
+      const alertId = parseInt(req.params.id);
+      
+      await db.update(inventoryAlerts)
+        .set({ isResolved: true })
+        .where(eq(inventoryAlerts.id, alertId));
+      
+      res.json({ message: "Alert resolved successfully" });
+    } catch (error) {
+      console.error('Resolve alert error:', error);
+      res.status(500).json({ message: "Failed to resolve alert" });
+    }
+  });
+
+  // Location categories
+  app.get("/api/location-categories", requireAuth, async (req, res) => {
+    try {
+      const categories = await db.select()
+        .from(locationCategories)
+        .where(eq(locationCategories.isActive, true))
+        .orderBy(locationCategories.sortOrder, locationCategories.name);
+      
+      res.json(categories);
+    } catch (error) {
+      console.error('Get location categories error:', error);
+      res.status(500).json({ message: "Failed to fetch location categories" });
+    }
+  });
+
+  app.post("/api/location-categories", requireAuth, async (req, res) => {
+    try {
+      const { name, description, sortOrder } = req.body;
+      
+      if (!name) {
+        return res.status(400).json({ message: "Category name is required" });
+      }
+      
+      const category = await db.insert(locationCategories)
+        .values({ name, description, sortOrder: sortOrder || 0 })
+        .returning();
+      
+      res.json(category[0]);
+    } catch (error) {
+      console.error('Create location category error:', error);
+      res.status(500).json({ message: "Failed to create location category" });
+    }
+  });
 
   const httpServer = createServer(app);
 

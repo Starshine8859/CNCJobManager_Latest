@@ -539,11 +539,11 @@ export default function Supplies() {
       imageUrl: supplyForm.imageUrl,
       texture: supplyForm.texture,
       
-      // Vendor relationships (filter out the first default row and empty entries)
-      vendors: supplyForm.vendors.slice(1).filter(v => v.vendorId && v.vendorId > 0),
+      // Vendor relationships (include any row with a selected vendor)
+      vendors: supplyForm.vendors.filter(v => v.vendorId && v.vendorId > 0),
       
-      // Location relationships (filter out the first default row and empty entries)
-      locations: supplyForm.locations.slice(1).filter(l => l.locationId && l.locationId > 0)
+      // Location relationships (include any row with a selected location)
+      locations: supplyForm.locations.filter(l => l.locationId && l.locationId > 0)
     };
     
     createSupplyMutation.mutate(supplyData);
@@ -567,11 +567,11 @@ export default function Supplies() {
       imageUrl: editSupplyForm.imageUrl,
       texture: editSupplyForm.texture,
       
-      // Vendor relationships (filter out the first default row and empty entries)
-      vendors: editSupplyForm.vendors.slice(1).filter(v => v.vendorId && v.vendorId > 0),
+      // Vendor relationships (include any row with a selected vendor)
+      vendors: editSupplyForm.vendors.filter(v => v.vendorId && v.vendorId > 0),
       
-      // Location relationships (filter out the first default row and empty entries)
-      locations: editSupplyForm.locations.slice(1).filter(l => l.locationId && l.locationId > 0)
+      // Location relationships (include any row with a selected location)
+      locations: editSupplyForm.locations.filter(l => l.locationId && l.locationId > 0)
     };
     
     console.log('Prepared supply data for update:', supplyData);
@@ -1289,25 +1289,22 @@ export default function Supplies() {
                                     />
                                   </td>
                                   <td className="p-3">
-                                    {index === 0 ? (
-                                      <span className="text-gray-500">—</span>
-                                    ) : (
-                                      <Select 
-                                        value={vendor.vendorId?.toString() || ""} 
-                                        onValueChange={(value) => updateVendor(vendor.id, 'vendorId', value ? parseInt(value) : undefined, false)}
-                                      >
-                                        <SelectTrigger className="w-full">
-                                          <SelectValue placeholder="Select vendor" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {vendors.map((v: Vendor) => (
-                                            <SelectItem key={v.id} value={v.id.toString()}>
-                                              {v.company}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    )}
+                                    <Select 
+                                      value={vendor.vendorId?.toString() || "retail"} 
+                                      onValueChange={(value) => updateVendor(vendor.id, 'vendorId', value === 'retail' ? undefined : parseInt(value), false)}
+                                    >
+                                      <SelectTrigger className="w-full">
+                                        <SelectValue placeholder="Select vendor" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="retail">Retail ($0.00)</SelectItem>
+                                        {vendors.map((v: Vendor) => (
+                                          <SelectItem key={v.id} value={v.id.toString()}>
+                                            {v.name && v.company ? `${v.name} — ${v.company}` : (v.name || v.company)}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
                                   </td>
                                   <td className="p-3">
                                     <Input
@@ -1798,25 +1795,22 @@ export default function Supplies() {
                           />
                         </td>
                         <td className="p-3">
-                          {index === 0 ? (
-                            <span className="text-gray-500">—</span>
-                          ) : (
-                            <Select 
-                              value={vendor.vendorId?.toString() || ""} 
-                              onValueChange={(value) => updateVendor(vendor.id, 'vendorId', value ? parseInt(value) : undefined, true)}
-                            >
-                              <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Select vendor" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {vendors.map((v: Vendor) => (
-                                  <SelectItem key={v.id} value={v.id.toString()}>
-                                    {v.company}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )}
+                          <Select 
+                            value={vendor.vendorId?.toString() || "retail"} 
+                            onValueChange={(value) => updateVendor(vendor.id, 'vendorId', value === 'retail' ? undefined : parseInt(value), true)}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select vendor" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="retail">Retail ($0.00)</SelectItem>
+                              {vendors.map((v: Vendor) => (
+                                <SelectItem key={v.id} value={v.id.toString()}>
+                                  {v.name && v.company ? `${v.name} — ${v.company}` : (v.name || v.company)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </td>
                         <td className="p-3">
                           <Input
