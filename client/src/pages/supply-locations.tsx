@@ -179,8 +179,8 @@ export default function SupplyLocations() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="text-left py-3 px-4 font-semibold text-gray-900">Items</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-900">Location Name</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-900">Items</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-900">Status</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-900">Actions</th>
                   </tr>
@@ -197,9 +197,6 @@ export default function SupplyLocations() {
                   ) : (
                     filteredLocations.map((location) => (
                       <tr key={location.id} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="py-3 px-4">
-                          <span className="text-sm text-gray-800 font-semibold">{location.itemCount}</span>
-                        </td>
                         <td className="py-3 px-4">
                           {editingId === location.id ? (
                             <div className="flex items-center space-x-2">
@@ -229,6 +226,9 @@ export default function SupplyLocations() {
                               <span className="font-medium">{location.name}</span>
                             </div>
                           )}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="text-sm text-gray-800 font-semibold">{location.itemCount}</span>
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex items-center space-x-2">
