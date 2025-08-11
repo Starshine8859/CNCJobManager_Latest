@@ -220,7 +220,7 @@ export default function Dashboard() {
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
       case 'waiting': return 'bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 border border-slate-300';
-      case 'in_progress': return 'bg-gradient-to-r from-emerald-100 to-emerald-200 text-emerald-700 border border-emerald-300';
+      case 'in_progress': return 'bg-gradient-to-r from-orange-100 to-orange-200 text-emerald-700 border border-emerald-300';
       case 'paused': return 'bg-gradient-to-r from-amber-100 to-amber-200 text-amber-700 border border-amber-300';
       case 'done': return 'bg-gradient-to-r from-green-100 to-green-200 text-green-700 border border-green-300';
       default: return 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 border border-gray-300';
@@ -608,7 +608,7 @@ export default function Dashboard() {
                           </div>
                         </td>
                         <td className="px-8 py-6 whitespace-nowrap">
-                          <Badge className={`${getStatusBadgeColor(job.status)} px-3 py-1 text-sm font-medium rounded-lg shadow-sm`}>
+                          <Badge className={`${getStatusBadgeColor(job.status)} px-3 py-1 text-sm font-medium rounded-lg shadow-sm`}>                            
                             {job.status.replace('_', ' ')}
                           </Badge>
                         </td>
