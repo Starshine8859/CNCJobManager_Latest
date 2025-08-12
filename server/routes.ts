@@ -1771,9 +1771,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/emails", requireAuth, async (req, res) => {
     try {
       const { from, to, cc, bcc, subject, body, status, scheduledAt } = req.body || {};
+      const defaultFrom = process.env.SENDGRID_FROM_EMAIL || (req.session?.user?.email ? req.session.user.email : 'noreply@cnc-job-manager.local');
+      const fromEmail = from || defaultFrom;
+      if (!to && status !== 'draft') {
+        return res.status(400).json({ message: 'Recipient (to) is required unless saving a draft' });
+      }
       const safeStatus = (status === 'draft' || status === 'scheduled' || status === 'sent') ? status : 'sent';
       const folder = safeStatus === 'draft' ? 'drafts' : (safeStatus === 'scheduled' ? 'scheduled' : 'sent');
-      const [saved] = await db.insert(emails).values({ from, to, cc, bcc, subject, body, folder, status: safeStatus, scheduledAt: scheduledAt ? new Date(scheduledAt) : null }).returning();
+      const [saved] = await db.insert(emails).values({ from: fromEmail, to: to || '', cc, bcc, subject, body, folder, status: safeStatus, scheduledAt: scheduledAt ? new Date(scheduledAt) : null }).returning();
       res.json(saved);
     } catch (e) {
       res.status(500).json({ message: 'Failed to store email' });

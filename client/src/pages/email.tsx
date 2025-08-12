@@ -46,15 +46,15 @@ export default function EmailCenterPage() {
       const payload: any = { ...compose };
       if (compose.status !== 'scheduled') delete payload.scheduledAt;
       const res = await apiRequest("POST", "/api/emails", payload);
-      if (!res.ok) throw new Error("Failed to send email");
       return res.json();
     },
-    onSuccess: () => {
-      toast({ title: "Sent", description: "Email sent." });
+    onSuccess: (saved: any) => {
+      const isDraft = saved?.status === 'draft' || saved?.folder === 'drafts';
+      toast({ title: isDraft ? "Draft saved" : compose.status === 'scheduled' ? 'Scheduled' : 'Sent', description: isDraft ? "Email saved to drafts." : compose.status === 'scheduled' ? 'Email scheduled.' : 'Email sent.' });
       setCompose({ to: "", cc: "", bcc: "", subject: "", body: "", status: 'sent', scheduledAt: "" });
       queryClient.invalidateQueries({ queryKey: ["emails"] });
     },
-    onError: () => toast({ title: "Error", description: "Failed to send email", variant: "destructive" }),
+    onError: (e: any) => toast({ title: "Error", description: e?.message || "Failed to save email", variant: "destructive" }),
   });
 
   const moveMutation = useMutation({
@@ -106,7 +106,7 @@ export default function EmailCenterPage() {
                   <Input type="datetime-local" value={compose.scheduledAt} onChange={(e) => setCompose({ ...compose, scheduledAt: e.target.value })} />
                 )}
               </div>
-              <Button onClick={() => sendMutation.mutate()} disabled={sendMutation.isPending || !compose.to}>
+              <Button onClick={() => sendMutation.mutate()} disabled={sendMutation.isPending || (compose.status !== 'draft' && !compose.to)}>
                 {compose.status === 'draft' ? 'Save draft' : compose.status === 'scheduled' ? 'Schedule' : 'Send'}
               </Button>
             </CardContent>
