@@ -126,7 +126,7 @@ export default function VendorsPage(): JSX.Element {
   return (
     <Layout currentTime={currentTime}>
       <div className="min-h-screen bg-gray-50 p-6">
-        <div className="mx-auto max-w-4xl">
+        <div className="mx-auto max-w-[1400px]">
           <header className="flex items-center justify-between mb-6">
             <h1 className="text-2xl font-semibold">Vendors</h1>
             <button
@@ -145,13 +145,15 @@ export default function VendorsPage(): JSX.Element {
             ) : vendors.length === 0 ? (
               <div className="p-6 text-gray-500">No vendors yet. Click “Add vendor” to create one.</div>
             ) : (
-              <table className="w-full text-left">
+              <table className="w-full text-left table-auto">
                 <thead className="bg-gray-100 text-sm text-gray-600">
                   <tr>
                     <th className="px-6 py-3">Name</th>
                     <th className="px-6 py-3">Company</th>
+                    <th className="px-6 py-3">Email</th>
+                    <th className="px-6 py-3">Phone</th>
                     <th className="px-6 py-3">Contact</th>
-                    <th className="px-6 py-3 w-36">Actions</th>
+                    <th className="px-6 py-3 w-40">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -159,6 +161,8 @@ export default function VendorsPage(): JSX.Element {
                     <tr key={v.id} className="border-t">
                       <td className="px-6 py-4 align-top">{v.name}</td>
                       <td className="px-6 py-4 align-top">{v.company}</td>
+                      <td className="px-6 py-4 align-top break-words max-w-[16rem]">{v.email || "-"}</td>
+                      <td className="px-6 py-4 align-top whitespace-nowrap">{v.phone || "-"}</td>
                       <td className="px-6 py-4 align-top">{v.contact_info}</td>
                       <td className="px-6 py-4 align-top">
                         <div className="flex gap-2">

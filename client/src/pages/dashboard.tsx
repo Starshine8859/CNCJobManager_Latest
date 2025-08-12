@@ -275,9 +275,9 @@ export default function Dashboard() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="group hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 bg-white/90 backdrop-blur-sm border-0 shadow-lg">
-            <CardContent className="p-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6 mb-8">
+          <Card className="group hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 bg-white/90 backdrop-blur-sm border-0 shadow-lg min-w-0">
+            <CardContent className="p-6 min-w-0">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-slate-600 mb-1">Active Jobs</p>
@@ -298,8 +298,8 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="group hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 bg-white/90 backdrop-blur-sm border-0 shadow-lg">
-            <CardContent className="p-6 flex flex-col h-full">
+          <Card className="group hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 bg-white/90 backdrop-blur-sm border-0 shadow-lg min-w-0">
+            <CardContent className="p-6 flex flex-col h-full min-w-0">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <p className="text-sm font-medium text-slate-600 mb-1">Sheets Cut</p>
@@ -329,7 +329,7 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2 mb-2">
                     <p className="text-sm font-medium text-slate-600">Avg Time</p>
                     <Select value={avgTimeType} onValueChange={v => setAvgTimeType(v as 'job' | 'sheet')}>
-                      <SelectTrigger className="h-8 w-36 text-xs bg-slate-50 border-slate-200 rounded-lg shadow-sm">
+                      <SelectTrigger className="h-8 min-w-[8rem] max-w-[60%] text-xs bg-slate-50 border-slate-200 rounded-lg shadow-sm">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="bg-white shadow-xl border-0 rounded-xl">
@@ -353,7 +353,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className="mt-auto flex justify-center">
-                <div className="bg-slate-50 rounded-lg p-2 shadow-inner">
+                <div className="bg-slate-50 rounded-lg p-2 shadow-inner w-full max-w-full overflow-hidden">
                   <DateRangePicker
                     dateRange={avgTimeDateRange}
                     onDateRangeChange={setAvgTimeDateRange}
@@ -363,8 +363,8 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="group hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 bg-white/90 backdrop-blur-sm border-0 shadow-lg">
-            <CardContent className="p-6">
+          <Card className="group hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 bg-white/90 backdrop-blur-sm border-0 shadow-lg min-w-0">
+            <CardContent className="p-6 min-w-0">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-slate-600 mb-1">Material Colors</p>
