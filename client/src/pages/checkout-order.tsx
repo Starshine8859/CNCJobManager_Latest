@@ -145,8 +145,10 @@ export default function CheckoutOrderPage() {
       return res.json();
     },
     onSuccess: () => {
+      toast({ title: "Saved", description: "Received quantity updated" });
       refetchOnOrder();
-    }
+    },
+    onError: (e: any) => toast({ title: "Error", description: e?.message || "Failed to update received", variant: "destructive" })
   });
 
   // Manual Check-In/Out state
@@ -655,13 +657,19 @@ export default function CheckoutOrderPage() {
                                         <Button
                                           variant="ghost"
                                           size="icon"
-                                          onClick={() => {
-                                            if (!row.location?.id || !row.supply?.id) return;
-                                            const qty = Math.max(0, currentQty - row.receivedQuantity);
-                                            if (qty > 0) {
-                                              checkInMutation.mutate({ supplyId: row.supply.id, locationId: row.location.id, quantity: qty, referenceId: row.poId });
+                                          onClick={async () => {
+                                            try {
+                                              if (!row.location?.id || !row.supply?.id) return;
+                                              const delta = Math.max(0, (currentQty || 0) - (row.receivedQuantity || 0));
+                                              if (delta > 0) {
+                                                await checkInMutation.mutateAsync({ supplyId: row.supply.id, locationId: row.location.id, quantity: delta, referenceId: row.poId });
+                                              }
+                                              await updateItemReceivedMutation.mutateAsync({ poId: row.poId, itemId: row.itemId, receivedQuantity: currentQty || 0 });
+                                              toast({ title: "Success", description: delta > 0 ? "Received and checked in" : "Received updated" });
+                                              refetchOnOrder();
+                                            } catch (e: any) {
+                                              toast({ title: "Error", description: e?.message || "Failed to receive", variant: "destructive" });
                                             }
-                                            updateItemReceivedMutation.mutate({ poId: row.poId, itemId: row.itemId, receivedQuantity: currentQty });
                                           }}
                                           disabled={checkInMutation.isPending || updateItemReceivedMutation.isPending}
                                         >

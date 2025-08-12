@@ -191,11 +191,10 @@ export default function Supplies() {
     locations: [
       {
         id: 0,
-    locationId: undefined as number | undefined,
+        locationId: undefined as number | undefined,
         onHandQuantity: 0,
         minimumQuantity: 0,
         orderGroupSize: 1,
-        allocationStatus: false
       }
     ]
   });
@@ -225,11 +224,10 @@ export default function Supplies() {
     locations: [
       {
         id: 0,
-    locationId: undefined as number | undefined,
+        locationId: undefined as number | undefined,
         onHandQuantity: 0,
         minimumQuantity: 0,
         orderGroupSize: 1,
-        allocationStatus: false
       }
     ]
   });
@@ -480,11 +478,10 @@ export default function Supplies() {
       locations: [
         {
           id: 0,
-      locationId: undefined,
+          locationId: undefined,
           onHandQuantity: 0,
           minimumQuantity: 0,
           orderGroupSize: 1,
-          allocationStatus: false
         }
       ]
     });
@@ -513,11 +510,10 @@ export default function Supplies() {
       locations: [
         {
           id: 0,
-      locationId: undefined,
+          locationId: undefined,
           onHandQuantity: 0,
           minimumQuantity: 0,
           orderGroupSize: 1,
-          allocationStatus: false
         }
       ]
     });
@@ -684,7 +680,6 @@ export default function Supplies() {
       onHandQuantity: 0,
       minimumQuantity: 0,
       orderGroupSize: 1,
-      allocationStatus: false
     };
     
     if (isEdit) {
@@ -782,7 +777,6 @@ export default function Supplies() {
             onHandQuantity: l.onHandQuantity || 0,
             minimumQuantity: l.minimumQuantity || 0,
             orderGroupSize: l.orderGroupSize || 1,
-            allocationStatus: l.allocationStatus || false
           }))
         : [
             {
@@ -791,7 +785,6 @@ export default function Supplies() {
               onHandQuantity: 0,
               minimumQuantity: 0,
               orderGroupSize: 1,
-              allocationStatus: false
             }
           ];
 
@@ -843,7 +836,6 @@ export default function Supplies() {
             onHandQuantity: 0,
             minimumQuantity: 0,
             orderGroupSize: 1,
-            allocationStatus: false
           }
         ]
     });
@@ -1365,7 +1357,6 @@ export default function Supplies() {
                                 <th className="p-3 text-left font-bold">On Hand</th>
                                 <th className="p-3 text-left font-bold">Minimum Qty</th>
                                 <th className="p-3 text-left font-bold">Order in Groups</th>
-                                <th className="p-3 text-left font-bold">Allocation</th>
                                 <th className="p-3 text-left font-bold">Actions</th>
                               </tr>
                             </thead>
@@ -1419,20 +1410,7 @@ export default function Supplies() {
                                       className="w-full"
                                     />
                                   </td>
-                                  <td className="p-3">
-                                    <Select 
-                                      value={location.allocationStatus ? "allocated" : "available"} 
-                                      onValueChange={(value) => updateLocation(location.id, 'allocationStatus', value === "allocated", false)}
-                                    >
-                                      <SelectTrigger className="w-full">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="available">Available</SelectItem>
-                                        <SelectItem value="allocated">Allocated</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </td>
+                                  
                                   <td className="p-3">
                                     <Button
                                       variant="outline"
@@ -1871,7 +1849,6 @@ export default function Supplies() {
                       <th className="p-3 text-left font-bold">On Hand</th>
                       <th className="p-3 text-left font-bold">Minimum Qty</th>
                       <th className="p-3 text-left font-bold">Order in Groups</th>
-                      <th className="p-3 text-left font-bold">Allocation</th>
                       <th className="p-3 text-left font-bold">Actions</th>
                     </tr>
                   </thead>
@@ -1925,20 +1902,7 @@ export default function Supplies() {
                             className="w-full"
                           />
                         </td>
-                        <td className="p-3">
-                          <Select 
-                            value={location.allocationStatus ? "allocated" : "available"} 
-                            onValueChange={(value) => updateLocation(location.id, 'allocationStatus', value === "allocated", true)}
-                          >
-                            <SelectTrigger className="w-full">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="available">Available</SelectItem>
-                              <SelectItem value="allocated">Allocated</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </td>
+                        
                         <td className="p-3">
                           <Button
                             variant="outline"
