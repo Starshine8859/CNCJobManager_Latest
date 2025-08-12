@@ -41,7 +41,10 @@ export default function JobModal({ open, onOpenChange }: JobModalProps) {
   });
 
   const createJobMutation = useMutation({
-    mutationFn: (data: CreateJob) => apiRequest('POST', '/api/jobs', data),
+    mutationFn: async (data: CreateJob) => {
+      const res = await apiRequest('POST', '/api/jobs', data);
+      return res.json();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/jobs'] });
       queryClient.invalidateQueries({ queryKey: ['/api/dashboard/stats'] });
@@ -52,10 +55,17 @@ export default function JobModal({ open, onOpenChange }: JobModalProps) {
         description: "Job created successfully",
       });
     },
-    onError: (error: any) => {
+    onError: async (error: any) => {
+      let description = error?.message || "Failed to create job";
+      try {
+        const body = JSON.parse(description.split(': ').slice(1).join(': '));
+        const issues = (body?.errors?.fieldErrors || {}) as Record<string, string[]>;
+        const first = Object.values(issues)[0]?.[0];
+        if (first) description = first;
+      } catch {}
       toast({
         title: "Error",
-        description: error.message || "Failed to create job",
+        description,
         variant: "destructive",
       });
     },

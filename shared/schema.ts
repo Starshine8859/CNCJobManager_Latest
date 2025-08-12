@@ -190,6 +190,24 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Emails storage for general email feature
+export const emails = pgTable("emails", {
+  id: serial("id").primaryKey(),
+  // Folders: inbox, sent, drafts, scheduled, spam, trash
+  folder: text("folder").notNull().default("sent"),
+  from: text("from").notNull(),
+  to: text("to").notNull(), // comma-separated list
+  cc: text("cc"),
+  bcc: text("bcc"),
+  subject: text("subject"),
+  body: text("body"),
+  // Status: draft, sent, scheduled
+  status: text("status").default("sent"),
+  scheduledAt: timestamp("scheduled_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Legacy tables (will be migrated and eventually removed)
 export const colorGroups = pgTable("color_groups", {
   id: serial("id").primaryKey(),
@@ -647,13 +665,16 @@ export type PurchaseOrderWithItems = PurchaseOrder & {
 
 // New types for enhanced inventory management
 export type LocationCategory = typeof locationCategories.$inferSelect;
-export type InsertLocationCategory = z.infer<typeof insertLocationCategorySchema>;
+export type InsertLocationCategory = typeof locationCategories.$inferInsert;
 export type InventoryMovement = typeof inventoryMovements.$inferSelect;
-export type InsertInventoryMovement = z.infer<typeof insertInventoryMovementSchema>;
+export type InsertInventoryMovement = typeof inventoryMovements.$inferInsert;
 export type VendorContact = typeof vendorContacts.$inferSelect;
-export type InsertVendorContact = z.infer<typeof insertVendorContactSchema>;
+export type InsertVendorContact = typeof vendorContacts.$inferInsert;
 export type InventoryAlert = typeof inventoryAlerts.$inferSelect;
-export type InsertInventoryAlert = z.infer<typeof insertInventoryAlertSchema>;
+export type InsertInventoryAlert = typeof inventoryAlerts.$inferInsert;
+
+export type Email = typeof emails.$inferSelect;
+export type InsertEmail = typeof emails.$inferInsert;
 
 // Enhanced types
 export type LocationWithCategory = Location & {

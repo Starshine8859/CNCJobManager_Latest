@@ -173,16 +173,31 @@ export default function CreatePurchaseOrder() {
       const response = await fetch("/api/purchase-orders/enhanced", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error("Failed to create purchase order");
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: async (data: any) => {
       toast({
         title: "Success",
         description: "Purchase order created successfully",
       });
+      try {
+        const poId = data?.order?.id;
+        if (poId) {
+          await fetch(`/api/purchase-orders/${poId}/status`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ status: "ordered" })
+          });
+        }
+      } catch {}
+      // Ensure downstream On Order table refreshes
+      queryClient.invalidateQueries({ queryKey: ["enhanced-pos"] });
+      queryClient.invalidateQueries({ queryKey: ["enhanced-pos", "ordered"] });
       setLocation("/checkout-order");
     },
     onError: (error) => {

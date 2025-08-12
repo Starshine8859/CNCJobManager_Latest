@@ -9,7 +9,8 @@ import path from "path";
 import fs from "fs";
 
 import { storage } from "./storage";
-import { createJobSchema, loginSchema, insertUserSchema, insertColorSchema, insertColorGroupSchema, insertSupplySchema, insertSupplyWithRelationsSchema, insertLocationSchema, insertVendorSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema, inventoryMovements, supplyLocations, supplies, locations, inventoryAlerts, locationCategories, purchaseOrders, purchaseOrderItems } from "@shared/schema";
+import sgMail from "@sendgrid/mail";
+import { createJobSchema, loginSchema, insertUserSchema, insertColorSchema, insertColorGroupSchema, insertSupplySchema, insertSupplyWithRelationsSchema, insertLocationSchema, insertVendorSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema, inventoryMovements, supplyLocations, supplies, locations, inventoryAlerts, locationCategories, purchaseOrders, purchaseOrderItems, vendors } from "@shared/schema";
 import { pool } from "./db";
 import { db } from "./db";
 import { eq, and, or, lte, gte, desc, sql } from "drizzle-orm";
@@ -242,7 +243,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/jobs/:id/start-timer", requireAuth, async (req, res) => {
     try {
       const jobId = parseInt(req.params.id);
-      const userId = (req as any).user?.id;
+      const userId = req.session.user?.id;
       
       await storage.startJobTimer(jobId, userId);
       
@@ -275,15 +276,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/jobs", requireAuth, async (req, res) => {
     try {
-      const jobData = createJobSchema.parse(req.body);
-      const job = await storage.createJob(jobData);
-      
-      // Broadcast new job to all connected clients
+      const parsed = createJobSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid job data", errors: parsed.error.flatten() });
+      }
+      const job = await storage.createJob(parsed.data);
       broadcastToClients({ type: 'job_created', data: job });
-      
       res.json(job);
-    } catch (error) {
-      res.status(400).json({ message: "Invalid job data" });
+    } catch (error: any) {
+      console.error('Create job error:', error?.message || error);
+      res.status(500).json({ message: "Failed to create job" });
     }
   });
 
@@ -429,7 +431,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const materialId = parseInt(req.params.id);
       const { quantity, reason } = req.body;
-      const userId = (req as any).user?.id;
+      const userId = req.session.user?.id;
       
       if (!quantity || quantity < 1) {
         return res.status(400).json({ message: 'Invalid recut quantity' });
@@ -989,7 +991,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const [order] = await db.insert(purchaseOrders)
         .values({
           poNumber,
-          status: 'draft',
+          status: 'ordered',
+          dateOrdered: new Date(),
           expectedDeliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate) : null,
           totalAmount,
           additionalComments: notes,
@@ -1133,39 +1136,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/purchase-orders/:id/send-email", requireAuth, async (req, res) => {
     try {
       const orderId = parseInt(req.params.id);
+      const { to, cc, bcc, subject, message } = req.body || {};
       
-      // Get order details
+      // Get order details (schema uses poNumber/dateOrdered/additionalComments). Vendor info is derived from items' vendorIds.
       const [order] = await db.select({
         id: purchaseOrders.id,
-        orderNumber: purchaseOrders.orderNumber,
-        vendorId: purchaseOrders.vendorId,
-        orderDate: purchaseOrders.orderDate,
+        poNumber: purchaseOrders.poNumber,
+        dateOrdered: purchaseOrders.dateOrdered,
         expectedDeliveryDate: purchaseOrders.expectedDeliveryDate,
         totalAmount: purchaseOrders.totalAmount,
-        notes: purchaseOrders.notes,
-        vendor: {
-          id: vendors.id,
-          name: vendors.name,
-          company: vendors.company,
-          email: vendors.email
-        }
+        additionalComments: purchaseOrders.additionalComments,
       })
       .from(purchaseOrders)
-      .innerJoin(vendors, eq(purchaseOrders.vendorId, vendors.id))
       .where(eq(purchaseOrders.id, orderId));
       
       if (!order) {
         return res.status(404).json({ message: "Purchase order not found" });
       }
       
-      if (!order.vendor.email) {
-        return res.status(400).json({ message: "Vendor has no email address" });
-      }
-      
-      // Get order items
+      // Get order items and collect vendor info
       const items = await db.select({
         id: purchaseOrderItems.id,
         supplyId: purchaseOrderItems.supplyId,
+        vendorId: purchaseOrderItems.vendorId,
         orderQuantity: purchaseOrderItems.orderQuantity,
         pricePerUnit: purchaseOrderItems.pricePerUnit,
         totalPrice: purchaseOrderItems.totalPrice,
@@ -1178,11 +1171,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
       .from(purchaseOrderItems)
       .innerJoin(supplies, eq(purchaseOrderItems.supplyId, supplies.id))
       .where(eq(purchaseOrderItems.purchaseOrderId, orderId));
-      
-      // This would integrate with your email service
-      console.log(`Sending PO email to ${order.vendor.email} for order ${order.orderNumber}`);
-      // await sendPurchaseOrderEmail(order.vendor.email, order, items);
-      
+
+      // Determine recipient email
+      let recipientEmail: string | null = (to as string) || null;
+      if (!recipientEmail) {
+        if (items.length > 0 && items[0].vendorId) {
+          const [vendorRow] = await db.select({
+            id: vendors.id,
+            email: vendors.email,
+          }).from(vendors).where(eq(vendors.id, items[0].vendorId));
+          recipientEmail = vendorRow?.email || null;
+        }
+      }
+      if (!recipientEmail) {
+        return res.status(400).json({ message: "No recipient email found for this order" });
+      }
+
+      const apiKey = process.env.SENDGRID_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ message: "Email service not configured (SENDGRID_API_KEY missing)" });
+      }
+      sgMail.setApiKey(apiKey);
+
+      const emailSubject = subject || `Purchase Order ${order.poNumber}`;
+      const emailBody = message || `Please find details for purchase order ${order.poNumber}.`;
+
+      const itemsRowsHtml = items.map(it => `
+        <tr>
+          <td style=\"padding:6px 8px;border-bottom:1px solid #eee;\">${it.supply?.name || it.supplyId}</td>
+          <td style=\"padding:6px 8px;border-bottom:1px solid #eee;\">${it.orderQuantity}</td>
+          <td style=\"padding:6px 8px;border-bottom:1px solid #eee;\">$${(it.pricePerUnit/100).toFixed(2)}</td>
+          <td style=\"padding:6px 8px;border-bottom:1px solid #eee;\">$${(it.totalPrice/100).toFixed(2)}</td>
+        </tr>
+      `).join("");
+
+      const html = `
+        <div style=\"font-family:system-ui,Segoe UI,Arial,sans-serif;font-size:14px;color:#111;\">
+          <p>${emailBody}</p>
+          <p><strong>PO #:</strong> ${order.poNumber}</p>
+          <table style=\"width:100%;border-collapse:collapse;margin-top:10px;\">
+            <thead>
+              <tr>
+                <th style=\"text-align:left;padding:6px 8px;border-bottom:2px solid #333;\">Item</th>
+                <th style=\"text-align:left;padding:6px 8px;border-bottom:2px solid #333;\">Qty</th>
+                <th style=\"text-align:left;padding:6px 8px;border-bottom:2px solid #333;\">Price</th>
+                <th style=\"text-align:left;padding:6px 8px;border-bottom:2px solid #333;\">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsRowsHtml}
+            </tbody>
+          </table>
+          <p style=\"margin-top:10px;\"><strong>PO Total:</strong> $${(order.totalAmount/100).toFixed(2)}</p>
+        </div>
+      `;
+
+      const msg: any = {
+        to: recipientEmail,
+        from: process.env.SENDGRID_FROM_EMAIL || recipientEmail,
+        subject: emailSubject,
+        html,
+      };
+      if (cc) msg.cc = cc;
+      if (bcc) msg.bcc = bcc;
+
+      await sgMail.send(msg);
+
+      await db.update(purchaseOrders)
+        .set({
+          vendorEmail: recipientEmail,
+          emailSubject: emailSubject,
+          additionalComments: (order.additionalComments || "") + (message ? `\n\nEmail: ${message}` : ""),
+          sendEmail: true,
+          updatedAt: new Date()
+        })
+        .where(eq(purchaseOrders.id, orderId));
+
       res.json({ message: "Purchase order email sent successfully" });
     } catch (error) {
       console.error('Send PO email error:', error instanceof Error ? error.message : String(error));
@@ -1361,6 +1425,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
+  // Remove duplicate/incorrect vendors route (typo missing leading slash)
+  // app.get("api/vendors", ...) was incorrect; proper route exists above with requireAuth
+  /*
   app.get("api/vendors", async (req, res) => {
      try {
       const existingVendors = await storage.getAllVendors();
@@ -1370,6 +1437,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to check setup status" });
     }
   })
+  */
 
   // Enhanced inventory management routes
   // Check-in/Check-out operations
@@ -1678,6 +1746,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Get movements error:', error);
       res.status(500).json({ message: "Failed to fetch inventory movements" });
+    }
+  });
+
+  // Email center basic endpoints
+  app.get("/api/emails", requireAuth, async (req, res) => {
+    try {
+      const { folder = 'sent', q } = req.query as any;
+      let results = await db.select().from(emails).where(eq(emails.folder, folder as string));
+      if (q) {
+        const query = (q as string).toLowerCase();
+        results = results.filter((e: any) =>
+          (e.subject || '').toLowerCase().includes(query) ||
+          (e.to || '').toLowerCase().includes(query) ||
+          (e.from || '').toLowerCase().includes(query)
+        );
+      }
+      res.json(results);
+    } catch (e) {
+      res.status(500).json({ message: 'Failed to fetch emails' });
+    }
+  });
+
+  app.post("/api/emails", requireAuth, async (req, res) => {
+    try {
+      const { from, to, cc, bcc, subject, body, status, scheduledAt } = req.body || {};
+      const safeStatus = (status === 'draft' || status === 'scheduled' || status === 'sent') ? status : 'sent';
+      const folder = safeStatus === 'draft' ? 'drafts' : (safeStatus === 'scheduled' ? 'scheduled' : 'sent');
+      const [saved] = await db.insert(emails).values({ from, to, cc, bcc, subject, body, folder, status: safeStatus, scheduledAt: scheduledAt ? new Date(scheduledAt) : null }).returning();
+      res.json(saved);
+    } catch (e) {
+      res.status(500).json({ message: 'Failed to store email' });
+    }
+  });
+
+  app.delete("/api/emails/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await db.update(emails).set({ folder: 'trash' }).where(eq(emails.id, id));
+      res.json({ message: 'Moved to trash' });
+    } catch (e) {
+      res.status(500).json({ message: 'Failed to delete email' });
     }
   });
 

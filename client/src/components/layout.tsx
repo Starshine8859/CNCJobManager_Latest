@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Clock, Menu, X, Settings, LogOut, Plus, Package, ChevronDown } from "lucide-react";
+import { Clock, Menu, X, Settings, LogOut, Plus, Package, ChevronDown, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -171,6 +171,17 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+
+                <Link href="/email">
+                  <a className={`font-medium pb-2 flex items-center ${
+                    location === '/email'
+                      ? 'text-primary border-b-2 border-primary'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}>
+                    <Mail className="h-4 w-4 mr-2" />
+                    Email
+                  </a>
+                </Link>
               </nav>
             </div>
             <div className="flex items-center space-x-4">

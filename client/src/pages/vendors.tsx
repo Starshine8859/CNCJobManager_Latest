@@ -12,6 +12,8 @@ export type Vendor = {
   name: string;
   company: string;
   contact_info: string;
+  email?: string | null;
+  phone?: string | null;
   created_at?: string;
 };
 
@@ -26,7 +28,7 @@ export default function VendorsPage(): JSX.Element {
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
 
   // Form state
-  const [form, setForm] = useState({ name: "", company: "", contact_info: "" });
+  const [form, setForm] = useState({ name: "", company: "", contact_info: "", email: "", phone: "" });
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -50,13 +52,13 @@ export default function VendorsPage(): JSX.Element {
 
   function openAddModal() {
     setEditingVendor(null);
-    setForm({ name: "", company: "", contact_info: "" });
+    setForm({ name: "", company: "", contact_info: "", email: "", phone: "" });
     setIsOpen(true);
   }
 
   function openEditModal(v: Vendor) {
     setEditingVendor(v);
-    setForm({ name: v.name, company: v.company, contact_info: v.contact_info });
+    setForm({ name: v.name, company: v.company, contact_info: v.contact_info || "", email: v.email || "", phone: v.phone || "" });
     setIsOpen(true);
   }
 
@@ -242,6 +244,30 @@ export default function VendorsPage(): JSX.Element {
                       placeholder="Phone, email, notes..."
                     />
                   </label>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <label className="block">
+                      <div className="text-sm text-gray-600">Email</div>
+                      <input
+                        name="email"
+                        value={form.email}
+                        onChange={onChange}
+                        type="email"
+                        className="mt-1 w-full rounded border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        placeholder="vendor@example.com"
+                      />
+                    </label>
+                    <label className="block">
+                      <div className="text-sm text-gray-600">Phone</div>
+                      <input
+                        name="phone"
+                        value={form.phone}
+                        onChange={onChange}
+                        className="mt-1 w-full rounded border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        placeholder="(555) 123-4567"
+                      />
+                    </label>
+                  </div>
                 </div>
 
                 <div className="mt-6 flex items-center justify-end gap-3">

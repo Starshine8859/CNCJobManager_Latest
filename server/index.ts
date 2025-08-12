@@ -1,95 +1,38 @@
-import 'dotenv/config';
-import express, { type Request, Response, NextFunction } from "express";
+import express from "express";
+import dotenv from "dotenv";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
-// Global error handler to catch WebSocket errors
-process.on('uncaughtException', (error) => {
-  // Check if this is the WebSocket error we want to ignore
-  if (error && typeof error === 'object' && 'url' in error && error.url === 'wss://localhost/v2') {
-    console.log('Ignoring global WebSocket error:', error.url);
-    return; // Don't crash the process
-  }
-  
-  // Log other uncaught exceptions
-  console.error('Uncaught Exception:', error);
-});
+dotenv.config();
 
-process.on('unhandledRejection', (reason, promise) => {
-  // Check if this is the WebSocket error we want to ignore
-  if (reason && typeof reason === 'object' && 'url' in reason && reason.url === 'wss://localhost/v2') {
-    console.log('Ignoring global WebSocket rejection:', reason.url);
-    return; // Don't crash the process
-  }
-  
-  // Log other unhandled rejections
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
+async function main() {
+  const app = express();
 
-const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+  // Basic middleware
+  app.use(express.json({ limit: "10mb" }));
+  app.use(express.urlencoded({ extended: true }));
 
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+  const port = parseInt(process.env.PORT || "5000", 10);
+  const isProd = process.env.NODE_ENV === "production";
 
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
+  // Register routes and websocket server
+  const httpServer = await registerRoutes(app);
 
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
-    }
-  });
-
-  next();
-});
-
-(async () => {
-  const server = await registerRoutes(app);
-
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
-    throw err;
-  });
-
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
+  // Frontend handling
+  if (isProd) {
     serveStatic(app);
+  } else {
+    await setupVite(app, httpServer);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    // reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
+  httpServer.listen(port, () => {
+    log(`Server listening on http://localhost:${port}`);
   });
-})();
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+
+// Removed duplicate/legacy entrypoint block

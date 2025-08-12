@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Package, Plus, Mail, CheckCircle, Clock, AlertCircle, DollarSign, Calendar } from "lucide-react";
+import { Package, Plus, Mail, CheckCircle, Clock, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,6 +67,9 @@ export default function EnhancedPurchaseOrders() {
   const [showReceiveDialog, setShowReceiveDialog] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailPoId, setEmailPoId] = useState<number | null>(null);
+  const [emailForm, setEmailForm] = useState({ to: "", cc: "", bcc: "", subject: "", message: "" });
 
   // Form states
   const [createForm, setCreateForm] = useState({
@@ -148,6 +151,25 @@ export default function EnhancedPurchaseOrders() {
     onError: (error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
+  });
+
+  const sendEmailMutation = useMutation({
+    mutationFn: async () => {
+      if (!emailPoId) throw new Error("Missing PO");
+      const res = await fetch(`/api/purchase-orders/${emailPoId}/send-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(emailForm)
+      });
+      if (!res.ok) throw new Error("Failed to send email");
+      return res.json();
+    },
+    onSuccess: () => {
+      setEmailOpen(false);
+      toast({ title: "Email sent", description: "Purchase order email sent successfully" });
+    },
+    onError: (err: any) => toast({ title: "Email failed", description: err?.message || "Could not send email", variant: "destructive" })
   });
 
   const receiveOrderMutation = useMutation({
@@ -557,7 +579,7 @@ export default function EnhancedPurchaseOrders() {
                             Mark Received
                           </Button>
                         )}
-                        <Button variant="outline">
+                        <Button variant="outline" onClick={() => { setEmailPoId(order.id); setEmailOpen(true); setEmailForm({ to: "", cc: "", bcc: "", subject: `Purchase Order ${order.poNumber}`, message: "" }); }}>
                           <Mail className="w-4 h-4 mr-2" />
                           Send Email
                         </Button>
@@ -594,6 +616,43 @@ export default function EnhancedPurchaseOrders() {
                   {receiveOrderMutation.isPending ? "Receiving..." : "Mark as Received"}
                 </Button>
               </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Email PO Dialog */}
+        <Dialog open={emailOpen} onOpenChange={setEmailOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Email Purchase Order</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <Label>To</Label>
+                <Input value={emailForm.to} onChange={(e) => setEmailForm((f) => ({ ...f, to: e.target.value }))} placeholder="vendor@example.com" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>CC</Label>
+                  <Input value={emailForm.cc} onChange={(e) => setEmailForm((f) => ({ ...f, cc: e.target.value }))} placeholder="cc@example.com" />
+                </div>
+                <div>
+                  <Label>BCC</Label>
+                  <Input value={emailForm.bcc} onChange={(e) => setEmailForm((f) => ({ ...f, bcc: e.target.value }))} placeholder="bcc@example.com" />
+                </div>
+              </div>
+              <div>
+                <Label>Subject</Label>
+                <Input value={emailForm.subject} onChange={(e) => setEmailForm((f) => ({ ...f, subject: e.target.value }))} placeholder="Subject" />
+              </div>
+              <div>
+                <Label>Message</Label>
+                <Textarea value={emailForm.message} onChange={(e) => setEmailForm((f) => ({ ...f, message: e.target.value }))} rows={6} placeholder="Message body" />
+              </div>
+            </div>
+            <div className="flex justify-end space-x-2 mt-4">
+              <Button variant="outline" onClick={() => setEmailOpen(false)}>Cancel</Button>
+              <Button onClick={() => sendEmailMutation.mutate()} disabled={sendEmailMutation.isPending}>Send Email</Button>
             </div>
           </DialogContent>
         </Dialog>

@@ -51,8 +51,17 @@ interface PurchaseOrderItem {
 export default function PurchaseOrders() {
   const [currentTime] = useState(new Date());
   const [searchTerm, setSearchTerm] = useState("");
-  const [fromDate, setFromDate] = useState(new Date().toISOString().split('T')[0]);
-  const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
+  const formatDateInput = (d: Date) => {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+  const today = new Date();
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const lastOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  const [fromDate, setFromDate] = useState(formatDateInput(firstOfMonth));
+  const [toDate, setToDate] = useState(formatDateInput(lastOfMonth));
   const [statusFilter, setStatusFilter] = useState("");
   const { toast } = useToast();
   const [, setLocation] = useLocation();

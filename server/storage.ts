@@ -25,9 +25,11 @@ export interface IStorage {
   updateUserPassword(id: number, hashedPassword: string): Promise<void>;
   getAllUsers(): Promise<User[]>;
   deleteUser(id: number): Promise<void>;
-  //Vendor management
-  // deleteVendor(id: number): Promise<void>;
-  updateVendor(id: number): Promise<Vendor>;
+  // Vendor management
+  getAllVendors(): Promise<Vendor[]>;
+  createOneVendor(vendor: InsertVendor): Promise<Vendor>;
+  updateVendor(id: number, vendorData: Partial<InsertVendor>): Promise<void>;
+  deleteVendor(id: number): Promise<void>;
   // Job management
   createJob(jobData: CreateJob): Promise<JobWithMaterials>;
   getJob(id: number): Promise<JobWithMaterials | undefined>;
@@ -122,7 +124,6 @@ export interface IStorage {
   createPurchaseOrder(orderData: InsertPurchaseOrder, items: InsertPurchaseOrderItem[]): Promise<PurchaseOrderWithItems>;
   updatePurchaseOrderReceived(id: number, dateReceived: Date): Promise<void>;
   getAllVendors(): Promise<Vendor[]>;
-  createVendor(vendor: InsertVendor): Promise<Vendor>;
   getVendorsForSupply(supplyId: number): Promise<Vendor[]>;
 
   // Dashboard stats
@@ -1611,31 +1612,43 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(purchaseOrders.dateOrdered));
 
     // Get items for each order
-    const ordersWithItems = await Promise.all(
+    const ordersWithItems: PurchaseOrderWithItems[] = await Promise.all(
       orders.map(async (order) => {
         const items = await db.select({
           id: purchaseOrderItems.id,
           purchaseOrderId: purchaseOrderItems.purchaseOrderId,
           supplyId: purchaseOrderItems.supplyId,
           vendorId: purchaseOrderItems.vendorId,
-          quantity: purchaseOrderItems.quantity,
+          locationId: purchaseOrderItems.locationId,
+          neededQuantity: purchaseOrderItems.neededQuantity,
+          orderQuantity: purchaseOrderItems.orderQuantity,
+          receivedQuantity: purchaseOrderItems.receivedQuantity,
           pricePerUnit: purchaseOrderItems.pricePerUnit,
           totalPrice: purchaseOrderItems.totalPrice,
+          orderInGroups: purchaseOrderItems.orderInGroups,
           createdAt: purchaseOrderItems.createdAt
         })
         .from(purchaseOrderItems)
         .where(eq(purchaseOrderItems.purchaseOrderId, order.id));
 
         // Get supply and vendor details for each item
-        const itemsWithDetails = await Promise.all(
+        const itemsWithDetails: (typeof purchaseOrderItems.$inferSelect & { supply: Supply; vendor: Vendor; })[] = await Promise.all(
           items.map(async (item) => {
             const supply = await db.select().from(supplies).where(eq(supplies.id, item.supplyId)).limit(1);
-            const vendor = await db.select().from(vendors).where(eq(vendors.id, item.vendorId)).limit(1);
+            const vendorRows = await db.select().from(vendors).where(eq(vendors.id, item.vendorId)).limit(1);
+            const vendorRow = vendorRows[0];
+            const mappedVendor: Vendor = {
+              id: vendorRow.id,
+              name: vendorRow.name,
+              company: vendorRow.company,
+              contact_info: vendorRow.contactInfo,
+              createdAt: vendorRow.createdAt,
+            };
             
             return {
               ...item,
               supply: supply[0] || null,
-              vendor: vendor[0] || null
+              vendor: mappedVendor
             };
           })
         );
@@ -1647,12 +1660,12 @@ export class DatabaseStorage implements IStorage {
         return {
           ...order,
           items: itemsWithDetails,
-          createdByUser: createdByUser[0] || null
-        };
+          createdByUser: createdByUser[0] as User
+        } as PurchaseOrderWithItems;
       })
     );
 
-    return ordersWithItems as PurchaseOrderWithItems[];
+    return ordersWithItems;
   }
 
   async createPurchaseOrder(orderData: InsertPurchaseOrder, orderItems: InsertPurchaseOrderItem[]): Promise<PurchaseOrderWithItems> {
@@ -1665,7 +1678,7 @@ export class DatabaseStorage implements IStorage {
     const poNumber = `PO-${dateStr}-${String(existingPOs.length + 1).padStart(3, '0')}`;
     
     // Calculate total amount
-    const totalAmount = orderItems.reduce((sum, item) => sum + (item.quantity * item.pricePerUnit), 0);
+    const totalAmount = orderItems.reduce((sum, item) => sum + (item.orderQuantity * item.pricePerUnit), 0);
 
     // Create purchase order
     const [purchaseOrder] = await db.insert(purchaseOrders).values({
@@ -1680,7 +1693,7 @@ export class DatabaseStorage implements IStorage {
         db.insert(purchaseOrderItems).values({
           ...item,
           purchaseOrderId: purchaseOrder.id,
-          totalPrice: item.quantity * item.pricePerUnit
+          totalPrice: item.orderQuantity * item.pricePerUnit
         }).returning()
       )
     );
@@ -1691,24 +1704,36 @@ export class DatabaseStorage implements IStorage {
       purchaseOrderId: purchaseOrderItems.purchaseOrderId,
       supplyId: purchaseOrderItems.supplyId,
       vendorId: purchaseOrderItems.vendorId,
-      quantity: purchaseOrderItems.quantity,
+      locationId: purchaseOrderItems.locationId,
+      neededQuantity: purchaseOrderItems.neededQuantity,
+      orderQuantity: purchaseOrderItems.orderQuantity,
+      receivedQuantity: purchaseOrderItems.receivedQuantity,
       pricePerUnit: purchaseOrderItems.pricePerUnit,
       totalPrice: purchaseOrderItems.totalPrice,
+      orderInGroups: purchaseOrderItems.orderInGroups,
       createdAt: purchaseOrderItems.createdAt
     })
     .from(purchaseOrderItems)
     .where(eq(purchaseOrderItems.purchaseOrderId, purchaseOrder.id));
 
     // Get supply and vendor details for each item
-    const itemsWithDetails = await Promise.all(
+    const itemsWithDetails: (typeof purchaseOrderItems.$inferSelect & { supply: Supply; vendor: Vendor })[] = await Promise.all(
       items.map(async (item) => {
         const supply = await db.select().from(supplies).where(eq(supplies.id, item.supplyId)).limit(1);
-        const vendor = await db.select().from(vendors).where(eq(vendors.id, item.vendorId)).limit(1);
+        const vendorRows = await db.select().from(vendors).where(eq(vendors.id, item.vendorId)).limit(1);
+        const vendorRow = vendorRows[0];
+        const mappedVendor: Vendor = {
+          id: vendorRow.id,
+          name: vendorRow.name,
+          company: vendorRow.company,
+          contact_info: vendorRow.contactInfo,
+          createdAt: vendorRow.createdAt,
+        };
         
         return {
           ...item,
           supply: supply[0] || null,
-          vendor: vendor[0] || null
+          vendor: mappedVendor
         };
       })
     );
@@ -1720,7 +1745,7 @@ export class DatabaseStorage implements IStorage {
     return {
       ...purchaseOrder,
       items: itemsWithDetails,
-      createdByUser: createdByUser[0] || null
+      createdByUser: createdByUser[0] as User
     } as PurchaseOrderWithItems;
   }
 
@@ -1740,7 +1765,14 @@ export class DatabaseStorage implements IStorage {
       // Select only the columns that exist in the database
       const result = await db.select().from(vendors).orderBy(vendors.id);
       console.log('Vendors fetched successfully:', result.length);
-      return result;
+      // Map DB field contactInfo to API type contact_info
+      return result.map((v) => ({
+        id: v.id,
+        name: v.name,
+        company: v.company,
+        contact_info: v.contactInfo,
+        createdAt: v.createdAt,
+      }));
     } catch (error) {
       console.error('Error in getAllVendors:', error);
       throw error;
@@ -1748,12 +1780,25 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createOneVendor(vendor: InsertVendor): Promise<Vendor> {
-    const result = await db.insert(vendors).values(vendor).returning();
-    return result[0];
+    const result = await db.insert(vendors).values({
+      name: vendor.name,
+      company: vendor.company,
+      contactInfo: (vendor as any).contact_info ?? (vendor as any).contactInfo ?? null,
+      email: (vendor as any).email ?? null,
+      phone: (vendor as any).phone ?? null,
+    }).returning();
+    const v = result[0];
+    return { id: v.id, name: v.name, company: v.company, contact_info: v.contactInfo, createdAt: v.createdAt } as Vendor;
   }
 
-  async updateVendor(id: number, vendorData: object): Promise<void> {
-    await db.update(vendors).set(vendorData).where(eq(vendors.id, id))
+  async updateVendor(id: number, vendorData: Partial<InsertVendor>): Promise<void> {
+    await db.update(vendors).set({
+      name: vendorData.name,
+      company: vendorData.company,
+      contactInfo: (vendorData as any).contact_info ?? (vendorData as any).contactInfo,
+      email: (vendorData as any).email ?? null,
+      phone: (vendorData as any).phone ?? null,
+    }).where(eq(vendors.id, id));
   }
 
   async deleteVendor(id: number): Promise<void> {
