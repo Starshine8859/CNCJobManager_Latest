@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Package, Search, Plus, Edit, Trash2, Upload, X, Save, AlertTriangle, LayoutGrid, Table as TableIcon, Sparkles, Palette, Moon, Sun } from "lucide-react";
+import { Package, Search, Plus, Edit, Trash2, Upload, X, Save, AlertTriangle, LayoutGrid, Table as TableIcon, Sparkles, Palette, Moon, Sun, Eye } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,11 +34,31 @@ interface Supply {
   } | null;
   defaultVendor?: string;
   defaultVendorPrice?: number;
+  // Aggregated inventory summaries from server
+  totalOnHand?: number;
+  totalAllocated?: number;
+  totalAvailable?: number;
+  locationsSummary?: {
+    locationId: number;
+    locationName: string;
+    categoryId: number | null;
+    onHandQuantity: number;
+    allocatedQuantity: number;
+    availableQuantity: number;
+    minimumQuantity: number;
+    orderGroupSize: number;
+  }[];
 }
 
 interface Location {
   id: number;
   name: string;
+}
+
+interface LocationCategory {
+  id: number;
+  name: string;
+  description?: string | null;
 }
 
 interface Vendor {
@@ -155,14 +175,19 @@ const TextureSwatch = ({ texture, hexColor, name, size = "md", isDarkMode = fals
 export default function Supplies() {
   const [currentTime] = useState(new Date());
   const [searchTerm, setSearchTerm] = useState("");
-  const [viewMode, setViewMode] = useState("card"); // "card" or "table"
+  const [viewMode, setViewMode] = useState("table"); // "card" or "table"
   const [isDarkMode, setIsDarkMode] = useState(false); // Dark mode state
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [dialogMode, setDialogMode] = useState<'edit' | 'view'>('edit');
+  const [viewSupply, setViewSupply] = useState<Supply | null>(null);
+  const [locationMetrics, setLocationMetrics] = useState<Array<{locationId:number;locationName:string;onHandQuantity:number;allocatedQuantity:number;availableQuantity:number;}>>([]);
   const [editingSupply, setEditingSupply] = useState<Supply | null>(null);
   const [supplyToDelete, setSupplyToDelete] = useState<Supply | null>(null);
   const [showLocationDialog, setShowLocationDialog] = useState(false);
   const [newLocationName, setNewLocationName] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<number | 'all'>('all');
+  const [locationFilter, setLocationFilter] = useState<number | 'all'>('all');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -266,6 +291,18 @@ export default function Supplies() {
         credentials: "include"
       });
       if (!response.ok) throw new Error("Failed to fetch locations");
+      return response.json();
+    }
+  });
+
+  // Fetch location categories for filtering
+  const { data: categories = [], isLoading: categoriesLoading } = useQuery({
+    queryKey: ["location-categories"],
+    queryFn: async () => {
+      const response = await fetch("/api/location-categories", {
+        credentials: "include"
+      });
+      if (!response.ok) throw new Error("Failed to fetch categories");
       return response.json();
     }
   });
@@ -738,6 +775,7 @@ export default function Supplies() {
 
   const openEditDialog = async (supply: Supply) => {
     try {
+      setDialogMode('edit');
       // Fetch the complete supply data with vendor and location relationships
       const response = await fetch(`/api/supplies/${supply.id}`, {
         credentials: "include"
@@ -843,9 +881,16 @@ export default function Supplies() {
     }
   };
 
-  const filteredSupplies = supplies.filter((supply: Supply) =>
-    supply.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredSupplies = supplies.filter((supply: Supply) => {
+    const matchesSearch = supply.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = categoryFilter === 'all'
+      ? true
+      : (supply.locationsSummary || []).some(ls => ls.categoryId === categoryFilter);
+    const matchesLocation = locationFilter === 'all'
+      ? true
+      : (supply.locationsSummary || []).some(ls => ls.locationId === locationFilter);
+    return matchesSearch && matchesCategory && matchesLocation;
+  });
 
   const formatPrice = (priceInCents: number | null | undefined) => {
     if (!priceInCents) return "—";
@@ -946,9 +991,9 @@ export default function Supplies() {
                   </Badge>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className={`text-xs ${themeClasses.textSecondary} font-medium`}>Description:</span>
+                  <span className={`text-xs ${themeClasses.textSecondary} font-medium`}>Available:</span>
                   <Badge className="">
-                    {supply.description ? "Yes" : "No"}
+                    {typeof supply.totalAvailable === 'number' ? supply.totalAvailable : Math.max(0, (supply.totalOnHand || 0) - (supply.totalAllocated || 0))}
                   </Badge>
                 </div>
               </div>
@@ -991,26 +1036,17 @@ export default function Supplies() {
               <th className="px-6 py-4 text-left text-sm font-bold uppercase tracking-wider">
                 Material
               </th>
-              <th className="px-6 py-4 text-left text-sm font-bold uppercase tracking-wider">
-                Location
+              <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
+                On Hand
               </th>
               <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
-                Part Number
-              </th>
-              <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
-                Retail Price
+                Allocated
               </th>
               <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
                 In Catalog
               </th>
               <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
-                Has Description
-              </th>
-              <th className="px-6 py-4 text-left text-sm font-bold uppercase tracking-wider">
-                Vendor
-              </th>
-              <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
-                Price
+                Available
               </th>
               <th className="px-6 py-4 text-center text-sm font-bold uppercase tracking-wider">
                 Actions
@@ -1040,39 +1076,24 @@ export default function Supplies() {
                     </div>
                   </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-6 py-4 whitespace-nowrap text-center">
                   <span className={`text-sm font-medium ${themeClasses.text}`}>
-                    {supply.location?.name || "—"}
+                    {typeof supply.totalOnHand === 'number' ? supply.totalOnHand : (supply.totalOnHand ?? 0)}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-center">
-                  <Badge className="">
-                    {supply.partNumber || "—"}
-                  </Badge>
+                  <span className={`text-sm font-medium ${themeClasses.text}`}>
+                    {typeof supply.totalAllocated === 'number' ? supply.totalAllocated : (supply.totalAllocated ?? 0)}
+                  </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-center">
-                  <Badge className="">
-                    {formatPrice(supply.retailPrice)}
-                  </Badge>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-center">
-                  <Badge className="">
+                  <span className={`text-sm font-medium ${themeClasses.text}`}>
                     {supply.availableInCatalog ? "Yes" : "No"}
-                  </Badge>
+                  </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-center">
-                  <Badge className="">
-                    {supply.description ? "Yes" : "No"}
-                  </Badge>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className={`text-sm font-medium ${themeClasses.text} truncate max-w-32`} title={supply.defaultVendor}>
-                    {supply.defaultVendor || "—"}
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-center">
-                  <span className={`text-sm font-bold ${isDarkMode ? 'text-green-400' : 'text-green-700'}`}>
-                    {formatPrice(supply.defaultVendorPrice)}
+                  <span className={`text-sm font-medium ${themeClasses.text}`}>
+                    {Math.max(0, (supply.totalOnHand || 0) - (supply.totalAllocated || 0))}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -1084,6 +1105,26 @@ export default function Supplies() {
                       className={`h-8 w-8 p-0 border-0 ${isDarkMode ? 'bg-gradient-to-r from-blue-800 to-indigo-800 hover:from-blue-700 hover:to-indigo-700 text-blue-300' : 'bg-gradient-to-r from-blue-100 to-indigo-100 hover:from-blue-200 hover:to-indigo-200 text-blue-700'} rounded-xl`}
                     >
                       <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        setViewSupply(supply);
+                        setDialogMode('view');
+                        try {
+                          const res = await fetch(`/api/supplies/${supply.id}/location-metrics`, { credentials: 'include' });
+                          const data = await res.json();
+                          setLocationMetrics(data || []);
+                          setShowEditDialog(true);
+                        } catch {
+                          setLocationMetrics([]);
+                          setShowEditDialog(true);
+                        }
+                      }}
+                      className={`h-8 w-8 p-0 border-0 ${isDarkMode ? 'bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 text-slate-200' : 'bg-gradient-to-r from-slate-100 to-slate-200 hover:from-slate-200 hover:to-slate-300 text-slate-700'} rounded-xl`}
+                    >
+                      <Eye className="w-4 h-4" />
                     </Button>
                     <Button
                       variant="outline"
@@ -1529,6 +1570,35 @@ export default function Supplies() {
               </div>
               
               <div className="flex items-center space-x-3">
+                {/* Filters: Category and Location */}
+                <div className="flex items-center space-x-2">
+                  <Label className={`${themeClasses.textSecondary} text-sm`}>Category</Label>
+                  <Select value={categoryFilter === 'all' ? 'all' : String(categoryFilter)} onValueChange={(v) => setCategoryFilter(v === 'all' ? 'all' : parseInt(v))}>
+                    <SelectTrigger className={`w-44 ${themeClasses.input} rounded-xl`}>
+                      <SelectValue placeholder="All categories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      {(categories as LocationCategory[]).map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Label className={`${themeClasses.textSecondary} text-sm`}>Location</Label>
+                  <Select value={locationFilter === 'all' ? 'all' : String(locationFilter)} onValueChange={(v) => setLocationFilter(v === 'all' ? 'all' : parseInt(v))}>
+                    <SelectTrigger className={`w-44 ${themeClasses.input} rounded-xl`}>
+                      <SelectValue placeholder="All locations" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      {(locations as Location[]).map((l) => (
+                        <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className={`flex ${isDarkMode ? 'bg-gradient-to-r from-gray-700 to-gray-600' : 'bg-gradient-to-r from-gray-100 to-gray-200'} rounded-xl p-1`}>
                   <Button
                     variant={viewMode === "card" ? "default" : "ghost"}
@@ -1595,17 +1665,17 @@ export default function Supplies() {
         </div>
       </div>
 
-      {/* Edit Supply Dialog */}
+      {/* Edit/View Supply Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent className={`max-w-6xl max-h-[90vh] overflow-y-auto ${themeClasses.dialog} border-0 rounded-2xl shadow-2xl`}>
           <DialogHeader>
             <DialogTitle className={`text-2xl font-bold ${isDarkMode ? 'bg-gradient-to-r from-indigo-400 to-purple-400' : 'bg-gradient-to-r from-indigo-600 to-purple-600'} bg-clip-text text-transparent`}>
-              ✏️ Edit Supply
+              {dialogMode === 'view' ? '👁️ View Supply' : '✏️ Edit Supply'}
             </DialogTitle>
           </DialogHeader>
           
           <div className="space-y-8">
-            {/* Main Section */}
+            {dialogMode === 'edit' && (
             <div className={`p-6 rounded-xl ${isDarkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
               <h3 className={`text-lg font-bold mb-4 ${themeClasses.text}`}>Main Information</h3>
               <div className="grid grid-cols-2 gap-4">
@@ -1726,8 +1796,9 @@ export default function Supplies() {
               )}
               </div>
             </div>
-            
-            {/* Vendors Section */}
+            )}
+
+            {dialogMode === 'edit' && (
             <div className={`p-6 rounded-xl ${isDarkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className={`text-lg font-bold ${themeClasses.text}`}>Vendors</h3>
@@ -1827,8 +1898,53 @@ export default function Supplies() {
                 </table>
               </div>
             </div>
+            )}
 
-            {/* Locations Section */}
+            {/* Location Information (View-only analytics) */}
+            {dialogMode === 'view' && viewSupply && (
+              <div className={`p-6 rounded-xl ${isDarkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                <h3 className={`text-lg font-bold mb-4 ${themeClasses.text}`}>Location Information</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className={`${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                        <th className="p-3 text-left font-bold">Location</th>
+                        <th className="p-3 text-right font-bold">On Hand</th>
+                        <th className="p-3 text-right font-bold">Allocated</th>
+                        <th className="p-3 text-right font-bold">Available</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {locationMetrics.map((row) => (
+                        <tr key={row.locationId} className={`border-b ${isDarkMode ? 'border-gray-600' : 'border-gray-200'}`}>
+                          <td className="p-3">{row.locationName || row.locationId}</td>
+                          <td className="p-3 text-right">{row.onHandQuantity}</td>
+                          <td className="p-3 text-right">{row.allocatedQuantity}</td>
+                          <td className="p-3 text-right">{Math.max(0, (row.onHandQuantity || 0) - (row.allocatedQuantity || 0))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {(() => {
+                      const totalOnHand = locationMetrics.reduce((sum, r) => sum + (r.onHandQuantity || 0), 0);
+                      const totalAllocated = locationMetrics.reduce((sum, r) => sum + (r.allocatedQuantity || 0), 0);
+                      const totalAvailable = Math.max(0, totalOnHand - totalAllocated);
+                      return (
+                        <tfoot>
+                          <tr className={`${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-indigo-50 text-indigo-900'} font-bold border-t-2 ${isDarkMode ? 'border-gray-500' : 'border-indigo-300'}`}>
+                            <td className="p-3">Sum (Total)</td>
+                            <td className="p-3 text-right">{totalOnHand}</td>
+                            <td className="p-3 text-right">{totalAllocated}</td>
+                            <td className="p-3 text-right">{totalAvailable}</td>
+                          </tr>
+                        </tfoot>
+                      );
+                    })()}
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {dialogMode === 'edit' && (
             <div className={`p-6 rounded-xl ${isDarkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className={`text-lg font-bold ${themeClasses.text}`}>Locations</h3>
@@ -1919,8 +2035,9 @@ export default function Supplies() {
                 </table>
               </div>
             </div>
+            )}
 
-            {/* Action Buttons */}
+            {dialogMode === 'edit' && (
             <div className="flex justify-between items-center pt-6 border-t">
               <Button 
                 variant="outline" 
@@ -1954,6 +2071,7 @@ export default function Supplies() {
               </Button>
               </div>
             </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

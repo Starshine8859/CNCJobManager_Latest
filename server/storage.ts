@@ -85,7 +85,7 @@ export interface IStorage {
   deleteSupply(id: number): Promise<void>;
   searchSupplies(query: string): Promise<SupplyWithLocation[]>;
   updateSupplyQuantity(id: number, quantity: number, type: 'receive' | 'use' | 'adjust', description?: string, jobId?: number, userId?: number): Promise<void>;
-  allocateSupplyForJob(supplyId: number, quantity: number, jobId: number, userId?: number): Promise<void>;
+  allocateSupplyForJob(supplyId: number, quantity: number, jobId: number, locationId: number, userId?: number): Promise<void>;
 
   // Location management (new)
   getAllLocations(): Promise<Location[]>;
@@ -993,8 +993,11 @@ export class DatabaseStorage implements IStorage {
     let recutSheetsCutResult;
 
     if (sheetsFrom || sheetsTo) {
-      const sheetsFromDate = sheetsFrom ? new Date(sheetsFrom) : new Date(0);
-      const sheetsToDate = sheetsTo ? new Date(sheetsTo) : new Date(Date.now());
+      // Normalize to full UTC day boundaries for inclusive filtering
+      const fromRaw = sheetsFrom ? new Date(sheetsFrom) : new Date(0);
+      const toRaw = sheetsTo ? new Date(sheetsTo) : new Date();
+      const sheetsFromDate = new Date(Date.UTC(fromRaw.getUTCFullYear(), fromRaw.getUTCMonth(), fromRaw.getUTCDate(), 0, 0, 0, 0));
+      const sheetsToDate = new Date(Date.UTC(toRaw.getUTCFullYear(), toRaw.getUTCMonth(), toRaw.getUTCDate(), 23, 59, 59, 999));
       
       // Add debug logging
       console.log('Sheets filtering:', {
@@ -1060,10 +1063,13 @@ export class DatabaseStorage implements IStorage {
     let avgTimeResult;
     let avgSheetTimeResult;
     let jobsForSheetTime;
+    let avgJobTimeSeconds = 0;
 
     if (timeFrom || timeTo) {
-      const timeFromDate = timeFrom ? new Date(timeFrom) : new Date(0);
-      const timeToDate = timeTo ? new Date(timeTo) : new Date(Date.now());
+      const timeFromRaw = timeFrom ? new Date(timeFrom) : new Date(0);
+      const timeToRaw = timeTo ? new Date(timeTo) : new Date();
+      const timeFromDate = new Date(Date.UTC(timeFromRaw.getUTCFullYear(), timeFromRaw.getUTCMonth(), timeFromRaw.getUTCDate(), 0, 0, 0, 0));
+      const timeToDate = new Date(Date.UTC(timeToRaw.getUTCFullYear(), timeToRaw.getUTCMonth(), timeToRaw.getUTCDate(), 23, 59, 59, 999));
       
       // Add debug logging
       console.log('Time filtering:', {
@@ -1073,16 +1079,31 @@ export class DatabaseStorage implements IStorage {
         timeToStr: timeTo
       });
       
-      avgTimeResult = await db.select({
-        avgDuration: sql<number>`avg(${jobs.totalDuration})`
-      }).from(jobs)
+      // Compute average job time based on time logs overlapping the range
+      const logsInRange = await db.select({
+        jobId: jobTimeLogs.jobId,
+        startTime: jobTimeLogs.startTime,
+        endTime: jobTimeLogs.endTime,
+      }).from(jobTimeLogs)
       .where(
+        // any overlap with [timeFromDate, timeToDate]
         and(
-          sql`${jobs.totalDuration} IS NOT NULL`,
-          sql`${jobs.createdAt} >= ${timeFromDate}`,
-          sql`${jobs.createdAt} <= ${timeToDate}`
+          sql`${jobTimeLogs.startTime} <= ${timeToDate}`,
+          sql`${jobTimeLogs.endTime} IS NULL OR ${jobTimeLogs.endTime} >= ${timeFromDate}`
         )
       );
+
+      const perJob: Record<number, number> = {};
+      for (const log of logsInRange) {
+        const start = new Date(Math.max((log.startTime as Date).getTime(), timeFromDate.getTime()));
+        const end = new Date(Math.min((log.endTime ?? new Date()).getTime(), timeToDate.getTime()));
+        const seconds = Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
+        if (seconds > 0) {
+          perJob[log.jobId] = (perJob[log.jobId] || 0) + seconds;
+        }
+      }
+      const durations = Object.values(perJob).filter(v => v > 0);
+      avgJobTimeSeconds = durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0;
 
       // Fetch jobs and their materials/recuts for correct sheet time calculation
       jobsForSheetTime = await db.query.jobs.findMany({
@@ -1108,6 +1129,7 @@ export class DatabaseStorage implements IStorage {
         avgDuration: sql<number>`avg(${jobs.totalDuration})`
       }).from(jobs)
       .where(sql`${jobs.totalDuration} IS NOT NULL`);
+      avgJobTimeSeconds = Math.round(Number(avgTimeResult[0]?.avgDuration || 0));
 
       jobsForSheetTime = await db.query.jobs.findMany({
         where: (j, { isNotNull }) => isNotNull(j.totalDuration),
@@ -1171,7 +1193,7 @@ export class DatabaseStorage implements IStorage {
     return {
       activeJobs: jobsByStatus.waiting + jobsByStatus.in_progress,
       sheetsCutToday: totalSheetsCut,
-      avgJobTime: avgTimeResult[0]?.avgDuration || 0,
+      avgJobTime: avgJobTimeSeconds || 0,
       avgSheetTime: avgSheetTime || 0,
       materialColors: (await db.select({ count: sql<number>`count(*)` }).from(supplies))[0]?.count || 0,
       jobsByStatus
@@ -1181,15 +1203,61 @@ export class DatabaseStorage implements IStorage {
   // Supply management methods
   async getAllSupplies(): Promise<SupplyWithLocation[]> {
     try {
-      // Get all supplies without location relation for now
+      // Base supplies
       const suppliesData = await db.select().from(supplies).orderBy(supplies.name);
-      
-      // Transform to match SupplyWithLocation type
+
+      // Pull per-location rows joined with locations to compute aggregates and filter metadata
+      const supplyLocationRows = await db.select({
+        supplyId: supplyLocations.supplyId,
+        locationId: supplyLocations.locationId,
+        onHandQuantity: supplyLocations.onHandQuantity,
+        allocatedQuantity: supplyLocations.allocatedQuantity,
+        availableQuantity: supplyLocations.availableQuantity,
+        minimumQuantity: supplyLocations.minimumQuantity,
+        orderGroupSize: supplyLocations.orderGroupSize,
+        locationName: locations.name,
+        categoryId: locations.categoryId,
+      })
+      .from(supplyLocations)
+      .leftJoin(locations, eq(supplyLocations.locationId, locations.id));
+
+      const supplyIdToSummary: Record<number, any> = {};
+      for (const row of supplyLocationRows) {
+        const key = row.supplyId;
+        if (!supplyIdToSummary[key]) {
+          supplyIdToSummary[key] = {
+            totalOnHand: 0,
+            totalAllocated: 0,
+            totalAvailable: 0,
+            locationsSummary: [] as any[],
+          };
+        }
+        supplyIdToSummary[key].totalOnHand += row.onHandQuantity || 0;
+        supplyIdToSummary[key].totalAllocated += row.allocatedQuantity || 0;
+        supplyIdToSummary[key].totalAvailable += row.availableQuantity || 0;
+        supplyIdToSummary[key].locationsSummary.push({
+          locationId: row.locationId,
+          locationName: row.locationName,
+          categoryId: row.categoryId,
+          onHandQuantity: row.onHandQuantity || 0,
+          allocatedQuantity: row.allocatedQuantity || 0,
+          availableQuantity: row.availableQuantity || 0,
+          minimumQuantity: row.minimumQuantity || 0,
+          orderGroupSize: row.orderGroupSize || 1,
+        });
+      }
+
       const suppliesWithLocation = suppliesData.map(supply => ({
         ...supply,
-        location: null // For now, set location to null since we're not using the linking table yet
+        location: null,
+        ...(supplyIdToSummary[supply.id] || {
+          totalOnHand: 0,
+          totalAllocated: 0,
+          totalAvailable: 0,
+          locationsSummary: [],
+        })
       }));
-      
+
       return suppliesWithLocation;
     } catch (error) {
       console.error('Error in getAllSupplies:', error);
@@ -1265,11 +1333,17 @@ export class DatabaseStorage implements IStorage {
           locationId: location.locationId,
           onHandQuantity: location.onHandQuantity || 0,
           minimumQuantity: location.minimumQuantity || 0,
-          orderGroupSize: location.orderGroupSize || 1
+          orderGroupSize: location.orderGroupSize || 1,
+          // Ensure availableQuantity reflects onHand - allocated (allocated defaults to 0)
+          availableQuantity: (location.onHandQuantity || 0)
         }));
         
         await db.insert(supplyLocations).values(locationRelations);
         console.log('Created location relationships:', locationRelations.length);
+        // Defensive: recalc available = onHand - allocated for this supply
+        await db.update(supplyLocations)
+          .set({ availableQuantity: sql`${supplyLocations.onHandQuantity} - ${supplyLocations.allocatedQuantity}` })
+          .where(eq(supplyLocations.supplyId, supply.id));
       }
       
       return supply;
@@ -1330,11 +1404,16 @@ export class DatabaseStorage implements IStorage {
           locationId: location.locationId,
           onHandQuantity: location.onHandQuantity || 0,
           minimumQuantity: location.minimumQuantity || 0,
-          orderGroupSize: location.orderGroupSize || 1
+          orderGroupSize: location.orderGroupSize || 1,
+          availableQuantity: (location.onHandQuantity || 0)
         }));
         
         await db.insert(supplyLocations).values(locationRelations);
         console.log('Updated location relationships:', locationRelations.length);
+        // Defensive: recalc available = onHand - allocated for this supply
+        await db.update(supplyLocations)
+          .set({ availableQuantity: sql`${supplyLocations.onHandQuantity} - ${supplyLocations.allocatedQuantity}` })
+          .where(eq(supplyLocations.supplyId, id));
       } else {
         console.log('No location relationships to insert');
       }
@@ -1352,18 +1431,67 @@ export class DatabaseStorage implements IStorage {
 
   async searchSupplies(query: string): Promise<SupplyWithLocation[]> {
     try {
-      // Search supplies without location relation for now
+      // Base supplies filtered by name
       const suppliesData = await db.select()
         .from(supplies)
         .where(ilike(supplies.name, `%${query}%`))
         .orderBy(supplies.name);
-      
-      // Transform to match SupplyWithLocation type
+
+      if (suppliesData.length === 0) return [] as any;
+
+      const supplyIds = suppliesData.map(s => s.id);
+      const supplyLocationRows = await db.select({
+        supplyId: supplyLocations.supplyId,
+        locationId: supplyLocations.locationId,
+        onHandQuantity: supplyLocations.onHandQuantity,
+        allocatedQuantity: supplyLocations.allocatedQuantity,
+        availableQuantity: supplyLocations.availableQuantity,
+        minimumQuantity: supplyLocations.minimumQuantity,
+        orderGroupSize: supplyLocations.orderGroupSize,
+        locationName: locations.name,
+        categoryId: locations.categoryId,
+      })
+      .from(supplyLocations)
+      .leftJoin(locations, eq(supplyLocations.locationId, locations.id))
+      .where(inArray(supplyLocations.supplyId, supplyIds));
+
+      const supplyIdToSummary: Record<number, any> = {};
+      for (const row of supplyLocationRows) {
+        const key = row.supplyId;
+        if (!supplyIdToSummary[key]) {
+          supplyIdToSummary[key] = {
+            totalOnHand: 0,
+            totalAllocated: 0,
+            totalAvailable: 0,
+            locationsSummary: [] as any[],
+          };
+        }
+        supplyIdToSummary[key].totalOnHand += row.onHandQuantity || 0;
+        supplyIdToSummary[key].totalAllocated += row.allocatedQuantity || 0;
+        supplyIdToSummary[key].totalAvailable += row.availableQuantity || 0;
+        supplyIdToSummary[key].locationsSummary.push({
+          locationId: row.locationId,
+          locationName: row.locationName,
+          categoryId: row.categoryId,
+          onHandQuantity: row.onHandQuantity || 0,
+          allocatedQuantity: row.allocatedQuantity || 0,
+          availableQuantity: row.availableQuantity || 0,
+          minimumQuantity: row.minimumQuantity || 0,
+          orderGroupSize: row.orderGroupSize || 1,
+        });
+      }
+
       const suppliesWithLocation = suppliesData.map(supply => ({
         ...supply,
-        location: null // For now, set location to null since we're not using the linking table yet
+        location: null,
+        ...(supplyIdToSummary[supply.id] || {
+          totalOnHand: 0,
+          totalAllocated: 0,
+          totalAvailable: 0,
+          locationsSummary: [],
+        })
       }));
-      
+
       return suppliesWithLocation;
     } catch (error) {
       console.error('Error in searchSupplies:', error);
@@ -1384,9 +1512,8 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async allocateSupplyForJob(supplyId: number, quantity: number, jobId: number, userId?: number): Promise<void> {
-    // This function needs to be updated to work with the new supply_locations table
-    // For now, just create a transaction record
+  async allocateSupplyForJob(supplyId: number, quantity: number, jobId: number, locationId: number, userId?: number): Promise<void> {
+    // record transaction
     await db.insert(supplyTransactions).values({
       supplyId,
       type: 'allocate',
@@ -1395,6 +1522,29 @@ export class DatabaseStorage implements IStorage {
       jobId,
       userId
     });
+
+    // ensure supply_location row exists
+    const existing = await db.select().from(supplyLocations).where(and(eq(supplyLocations.supplyId, supplyId), eq(supplyLocations.locationId, locationId)));
+    if (existing.length === 0) {
+      await db.insert(supplyLocations).values({
+        supplyId,
+        locationId,
+        onHandQuantity: 0,
+        allocatedQuantity: 0,
+        availableQuantity: 0,
+        minimumQuantity: 0,
+        reorderPoint: 0,
+        orderGroupSize: 1
+      });
+    }
+
+    // update allocated and available atomically
+    await db.update(supplyLocations)
+      .set({
+        allocatedQuantity: sql`${supplyLocations.allocatedQuantity} + ${quantity}`,
+        availableQuantity: sql`${supplyLocations.onHandQuantity} - (${supplyLocations.allocatedQuantity} + ${quantity})`
+      })
+      .where(and(eq(supplyLocations.supplyId, supplyId), eq(supplyLocations.locationId, locationId)));
   }
 
   // Enhanced inventory management (new)

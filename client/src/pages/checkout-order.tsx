@@ -17,9 +17,12 @@ interface NeedToPurchaseRow {
   supplyId: number;
   locationId: number;
   onHandQuantity: number;
+  allocatedQuantity?: number;
+  availableQuantity?: number;
   minimumQuantity: number;
   reorderPoint: number;
   orderGroupSize: number;
+  suggestedOrderQty?: number;
   supply: {
     id: number;
   name: string;
@@ -131,6 +134,12 @@ export default function CheckoutOrderPage() {
 
   // Local state for receiving quantities per item
   const [receiveQty, setReceiveQty] = useState<Record<number, number>>({});
+  const [hideFullyReceived, setHideFullyReceived] = useState(true);
+
+  const displayedOnOrderRows: EnhancedPOItemRow[] = useMemo(() => {
+    if (!hideFullyReceived) return onOrderRows;
+    return onOrderRows.filter((r) => (r.receivedQuantity || 0) < (r.orderedQuantity || 0));
+  }, [onOrderRows, hideFullyReceived]);
 
   // Update PO item received quantity
   const updateItemReceivedMutation = useMutation({
@@ -156,7 +165,7 @@ export default function CheckoutOrderPage() {
   const [selectedSupplyId, setSelectedSupplyId] = useState<string>("");
   const [manualCheckInQty, setManualCheckInQty] = useState<number>(0);
   const [manualCheckOutQty, setManualCheckOutQty] = useState<number>(0);
-  const [manualJobId, setManualJobId] = useState<string>("");
+  const [manualNotes, setManualNotes] = useState<string>("");
 
   // Load locations
   interface Location { id: number; name: string }
@@ -233,9 +242,8 @@ export default function CheckoutOrderPage() {
           supplyId: Number(selectedSupplyId),
           locationId: Number(selectedLocationId),
           quantity: manualCheckOutQty,
-          referenceType: manualJobId ? "job" : "manual",
-          referenceId: manualJobId ? Number(manualJobId) : undefined,
-          notes: manualJobId ? `Check-out for job ${manualJobId}` : "Manual check-out"
+          referenceType: "manual",
+          notes: manualNotes?.trim() ? manualNotes.trim() : "Manual check-out",
         })
       });
       if (!res.ok) {
@@ -247,6 +255,7 @@ export default function CheckoutOrderPage() {
     onSuccess: () => {
       toast({ title: "Success", description: "Checked out" });
       setManualCheckOutQty(0);
+      setManualNotes("");
       queryClient.invalidateQueries({ queryKey: ["ci-supplies-at", selectedLocationId] });
       queryClient.invalidateQueries({ queryKey: ["need-to-purchase"] });
     },
@@ -338,6 +347,83 @@ export default function CheckoutOrderPage() {
     }
   });
 
+  const createGroupedOrders = useMutation({
+    mutationFn: async () => {
+      // Build items grouped by preferred vendor
+      const selected = rows.filter((r) => selectedRows[`${r.supplyId}-${r.locationId}`]);
+      if (selected.length === 0) throw new Error("No rows selected");
+
+      const groups: Record<number, any[]> = {};
+
+      // Resolve vendor and price per unit per row
+      for (const r of selected) {
+        const resp = await fetch(`/api/supplies/${r.supplyId}/vendors`, { credentials: "include" });
+        if (!resp.ok) continue;
+        const vs = await resp.json();
+        // Prefer vendor with isPreferred; else first
+        const preferred = (vs || []).find((v: any) => v.isPreferred) || (vs || [])[0];
+        if (!preferred || !preferred.id) continue;
+
+        const vendorId = preferred.id as number;
+        const key = `${r.supplyId}-${r.locationId}`;
+        const orderQty = qtyOverrides[key] || suggestedQty(r);
+        if (!groups[vendorId]) groups[vendorId] = [];
+        groups[vendorId].push({
+          supplyId: r.supplyId,
+          vendorId,
+          locationId: r.locationId,
+          neededQuantity: suggestedQty(r),
+          orderQuantity: orderQty,
+          pricePerUnit: Math.max(0, Math.floor((preferred.price ?? 0))),
+        });
+      }
+
+      const vendorIds = Object.keys(groups).map((k) => parseInt(k));
+      if (vendorIds.length === 0) throw new Error("No preferred vendors found for selected items");
+
+      const results = [] as any[];
+      for (const vendorId of vendorIds) {
+        const payload = {
+          vendorId,
+          expectedDeliveryDate: null,
+          notes: "Auto-generated from Need to Purchase (preferred vendors)",
+          items: groups[vendorId],
+          sendEmail: false,
+        };
+        const res = await fetch("/api/purchase-orders/enhanced", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error("Failed to create purchase order");
+        const json = await res.json();
+        // Explicitly set status to ordered (defensive)
+        try {
+          const poId = json?.order?.id;
+          if (poId) {
+            await fetch(`/api/purchase-orders/${poId}/status`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ status: "ordered" })
+            });
+          }
+        } catch {}
+        results.push(json);
+      }
+      return results;
+    },
+    onSuccess: () => {
+      setSelectedRows({});
+      setQtyOverrides({});
+      queryClient.invalidateQueries({ queryKey: ["need-to-purchase"] });
+      refetchOnOrder();
+      toast({ title: "Success", description: "Purchase orders created by preferred vendors" });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e?.message || "Failed to create grouped POs", variant: "destructive" })
+  });
+
   const toggleRow = (key: string) => {
     setSelectedRows((prev) => ({ ...prev, [key]: !prev[key] }));
   };
@@ -347,11 +433,18 @@ export default function CheckoutOrderPage() {
   };
 
   const suggestedQty = (row: NeedToPurchaseRow) => {
+    if (row.suggestedOrderQty && row.suggestedOrderQty > 0) return row.suggestedOrderQty;
+    const available = typeof row.availableQuantity === 'number'
+      ? row.availableQuantity
+      : Math.max(0, (row.onHandQuantity || 0) - (row.allocatedQuantity || 0));
     const threshold = Math.max(row.reorderPoint || 0, row.minimumQuantity || 0);
-    const deficit = Math.max(0, threshold - row.onHandQuantity);
+    let base = Math.max(0, threshold - available);
+    if ((row.allocatedQuantity || 0) > 0 && base < (row.allocatedQuantity || 0)) {
+      base = row.allocatedQuantity || 0;
+    }
     const group = Math.max(1, row.orderGroupSize || 1);
-    const groups = Math.ceil(deficit / group);
-    return Math.max(group * groups, group);
+    const groups = Math.ceil(base / group);
+    return Math.max(group, groups * group);
   };
 
   const rows = useMemo(() => needToPurchase, [needToPurchase]);
@@ -443,6 +536,15 @@ export default function CheckoutOrderPage() {
                   >
                     {createOrderMutation.isPending ? "Creating..." : "Create Purchase Order"}
                   </Button>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => createGroupedOrders.mutate()}
+                    disabled={selectedCount === 0 || createGroupedOrders.isPending}
+                    className="w-full mt-2"
+                  >
+                    {createGroupedOrders.isPending ? "Creating..." : "Create POs by Preferred Vendors"}
+                  </Button>
                 </CardContent>
               </Card>
 
@@ -457,7 +559,7 @@ export default function CheckoutOrderPage() {
                   <div>
                     <Label className="text-sm font-semibold text-gray-700 mb-2 block">Location</Label>
                     <Select value={selectedLocationId} onValueChange={setSelectedLocationId}>
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select location" />
                       </SelectTrigger>
                       <SelectContent>
@@ -471,7 +573,7 @@ export default function CheckoutOrderPage() {
                   <div>
                     <Label className="text-sm font-semibold text-gray-700 mb-2 block">Supply at location</Label>
                       <Select value={selectedSupplyId} onValueChange={setSelectedSupplyId} disabled={!selectedLocationId}>
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full">
                         <SelectValue placeholder={selectedLocationId ? "Select supply" : "Select location first"} />
                       </SelectTrigger>
                       <SelectContent>
@@ -489,18 +591,22 @@ export default function CheckoutOrderPage() {
 
                   <div className="space-y-2">
                     <Label className="text-sm font-semibold text-gray-700">Manual Check-in</Label>
-                    <div className="flex gap-2">
-                      <Input type="number" min={1} value={manualCheckInQty || ""} onChange={(e) => setManualCheckInQty(Math.max(0, parseInt(e.target.value) || 0))} placeholder="Qty" />
-                      <Button onClick={() => manualCheckIn.mutate()} disabled={!selectedLocationId || !selectedSupplyId || manualCheckIn.isPending || (manualCheckInQty <= 0)}>Check in</Button>
+                    <div className="flex flex-col gap-2">
+                      <Input className="w-full" type="number" min={1} value={manualCheckInQty || ""} onChange={(e) => setManualCheckInQty(Math.max(0, parseInt(e.target.value) || 0))} placeholder="Qty" />
+                      <div>
+                        <Button onClick={() => manualCheckIn.mutate()} disabled={!selectedLocationId || !selectedSupplyId || manualCheckIn.isPending || (manualCheckInQty <= 0)}>Check in</Button>
+                      </div>
                     </div>
                   </div>
 
                   <div className="space-y-2">
                     <Label className="text-sm font-semibold text-gray-700">Manual Check-out</Label>
-                    <div className="flex gap-2">
-                      <Input type="number" min={1} value={manualCheckOutQty || ""} onChange={(e) => setManualCheckOutQty(Math.max(0, parseInt(e.target.value) || 0))} placeholder="Qty" />
-                      <Input type="number" value={manualJobId} onChange={(e) => setManualJobId(e.target.value)} placeholder="Job ID (optional)" />
-                      <Button onClick={() => manualCheckOut.mutate()} disabled={!selectedLocationId || !selectedSupplyId || (manualCheckOut?.isPending ?? false) || (manualCheckOutQty <= 0) || (!!selectedSupply && manualCheckOutQty > (selectedSupply?.onHandQuantity || 0))}>Check out</Button>
+                    <div className="flex flex-col gap-2">
+                      <Input className="w-full" type="number" min={1} value={manualCheckOutQty || ""} onChange={(e) => setManualCheckOutQty(Math.max(0, parseInt(e.target.value) || 0))} placeholder="Qty" />
+                      <Input className="w-full" type="text" value={manualNotes} onChange={(e) => setManualNotes(e.target.value)} placeholder="Description (optional)" />
+                      <div>
+                        <Button onClick={() => manualCheckOut.mutate()} disabled={!selectedLocationId || !selectedSupplyId || (manualCheckOut?.isPending ?? false) || (manualCheckOutQty <= 0) || (!!selectedSupply && manualCheckOutQty > (selectedSupply?.onHandQuantity || 0))}>Check out</Button>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -533,6 +639,8 @@ export default function CheckoutOrderPage() {
                             <th className="px-4 py-3 text-left">Item</th>
                             <th className="px-4 py-3 text-left">Piece Size</th>
                             <th className="px-4 py-3 text-center">On Hand</th>
+                            <th className="px-4 py-3 text-center">Allocated</th>
+                            <th className="px-4 py-3 text-center">Available</th>
                             <th className="px-4 py-3 text-center">Min</th>
                             <th className="px-4 py-3 text-center">Reorder</th>
                             <th className="px-4 py-3 text-center">Qty to Order</th>
@@ -563,6 +671,8 @@ export default function CheckoutOrderPage() {
               </td>
                                 <td className="px-4 py-3 align-middle">{row.supply.pieceSize}</td>
                                 <td className="px-4 py-3 align-middle text-center">{row.onHandQuantity}</td>
+                                <td className="px-4 py-3 align-middle text-center">{row.allocatedQuantity ?? 0}</td>
+                                <td className="px-4 py-3 align-middle text-center">{typeof row.availableQuantity === 'number' ? row.availableQuantity : Math.max(0, (row.onHandQuantity || 0) - (row.allocatedQuantity || 0))}</td>
                                 <td className="px-4 py-3 align-middle text-center">{row.minimumQuantity}</td>
                                 <td className="px-4 py-3 align-middle text-center">{row.reorderPoint}</td>
                                 <td className="px-4 py-3 align-middle text-center">
@@ -592,12 +702,16 @@ export default function CheckoutOrderPage() {
                       <Truck className="w-5 h-5 mr-2" />
                       On Order
                     </CardTitle>
+                    <label className="flex items-center gap-2 text-sm text-gray-600">
+                      <input type="checkbox" checked={hideFullyReceived} onChange={(e) => setHideFullyReceived(e.target.checked)} />
+                      Hide fully received
+                    </label>
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
                   {onOrderLoading ? (
                     <div className="p-6 text-gray-500">Loading...</div>
-                  ) : onOrderRows.length === 0 ? (
+                  ) : displayedOnOrderRows.length === 0 ? (
                     <div className="p-6 text-gray-500">No items currently on order</div>
                   ) : (
                     <div className="overflow-x-auto">
@@ -616,7 +730,7 @@ export default function CheckoutOrderPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {onOrderRows.map((row) => {
+                          {displayedOnOrderRows.map((row) => {
                             const vendorName = row.vendorId ? (vendorById[row.vendorId]?.company || vendorById[row.vendorId]?.name || `Vendor #${row.vendorId}`) : "-";
                             const currentQty = receiveQty[row.itemId] ?? row.receivedQuantity ?? 0;
                             return (

@@ -10,7 +10,7 @@ import fs from "fs";
 
 import { storage } from "./storage";
 import sgMail from "@sendgrid/mail";
-import { createJobSchema, loginSchema, insertUserSchema, insertColorSchema, insertColorGroupSchema, insertSupplySchema, insertSupplyWithRelationsSchema, insertLocationSchema, insertVendorSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema, inventoryMovements, supplyLocations, supplies, locations, inventoryAlerts, locationCategories, purchaseOrders, purchaseOrderItems, vendors } from "@shared/schema";
+import { createJobSchema, loginSchema, insertUserSchema, insertColorSchema, insertColorGroupSchema, insertSupplySchema, insertSupplyWithRelationsSchema, insertLocationSchema, insertVendorSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema, inventoryMovements, supplyLocations, supplies, locations, inventoryAlerts, locationCategories, purchaseOrders, purchaseOrderItems, vendors, emails } from "@shared/schema";
 import { pool } from "./db";
 import { db } from "./db";
 import { eq, and, or, lte, gte, desc, sql } from "drizzle-orm";
@@ -723,6 +723,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Supply location metrics (on hand, allocated, available) for a supply
+  app.get("/api/supplies/:id/location-metrics", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const rows = await db.select({
+        id: supplyLocations.id,
+        locationId: supplyLocations.locationId,
+        locationName: locations.name,
+        onHandQuantity: supplyLocations.onHandQuantity,
+        allocatedQuantity: supplyLocations.allocatedQuantity,
+        availableQuantity: supplyLocations.availableQuantity,
+      })
+      .from(supplyLocations)
+      .leftJoin(locations, eq(supplyLocations.locationId, locations.id))
+      .where(eq(supplyLocations.supplyId, id));
+
+      res.json(rows);
+    } catch (error) {
+      console.error('Get supply location metrics error:', error);
+      res.status(500).json({ message: "Failed to fetch supply location metrics" });
+    }
+  });
+
   app.post("/api/supplies", requireAuth, async (req, res) => {
     try {
       console.log('Creating supply with data:', req.body);
@@ -748,6 +771,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log('Calling storage.updateSupply...');
       await storage.updateSupply(id, supplyData);
+      // Recalculate available for all locations of this supply
+      await db.update(supplyLocations)
+        .set({ availableQuantity: sql`${supplyLocations.onHandQuantity} - ${supplyLocations.allocatedQuantity}` })
+        .where(eq(supplyLocations.supplyId, id));
       console.log('Storage.updateSupply completed successfully');
       
       console.log('Sending success response...');
@@ -792,7 +819,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { quantity, jobId } = req.body;
       const userId = req.session.user?.id;
       
-      await storage.allocateSupplyForJob(id, quantity, jobId, userId);
+      const { locationId } = req.body;
+      await storage.allocateSupplyForJob(id, quantity, jobId, locationId, userId);
       res.json({ message: "Supply allocated successfully" });
     } catch (error) {
       res.status(400).json({ message: "Invalid allocation data" });
@@ -1798,10 +1826,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Reorder management
   app.get("/api/inventory/need-to-purchase", requireAuth, async (req, res) => {
     try {
-      const needToPurchase = await db.select({
+      const rows = await db.select({
         supplyId: supplyLocations.supplyId,
         locationId: supplyLocations.locationId,
         onHandQuantity: supplyLocations.onHandQuantity,
+        allocatedQuantity: supplyLocations.allocatedQuantity,
+        availableQuantity: supplyLocations.availableQuantity,
         minimumQuantity: supplyLocations.minimumQuantity,
         reorderPoint: supplyLocations.reorderPoint,
         orderGroupSize: supplyLocations.orderGroupSize,
@@ -1809,7 +1839,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           id: supplies.id,
           name: supplies.name,
           hexColor: supplies.hexColor,
-          pieceSize: supplies.pieceSize
+          pieceSize: supplies.pieceSize,
+          partNumber: supplies.partNumber,
         },
         location: {
           id: locations.id,
@@ -1821,13 +1852,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       .innerJoin(locations, eq(supplyLocations.locationId, locations.id))
       .where(
         or(
-          lte(supplyLocations.onHandQuantity, supplyLocations.reorderPoint),
-          lte(supplyLocations.onHandQuantity, supplyLocations.minimumQuantity)
+          lte(supplyLocations.availableQuantity, supplyLocations.minimumQuantity),
+          lte(supplyLocations.availableQuantity, supplyLocations.reorderPoint)
         )
       )
       .orderBy(supplies.name);
-      
-      res.json(needToPurchase);
+
+      const enriched = rows.map((r) => {
+        const available = (r.availableQuantity ?? (r.onHandQuantity - (r.allocatedQuantity || 0))) || 0;
+        const threshold = Math.max(r.minimumQuantity || 0, r.reorderPoint || 0);
+        let base = Math.max(0, threshold - available);
+        if ((r.allocatedQuantity || 0) > 0 && base < (r.allocatedQuantity || 0)) {
+          base = r.allocatedQuantity || 0;
+        }
+        const group = Math.max(1, r.orderGroupSize || 1);
+        const groups = Math.ceil(base / group);
+        const suggestedOrderQty = Math.max(group, groups * group);
+        return { ...r, available, suggestedOrderQty };
+      });
+
+      res.json(enriched);
     } catch (error) {
       console.error('Need to purchase error:', error);
       res.status(500).json({ message: "Failed to fetch need to purchase data" });

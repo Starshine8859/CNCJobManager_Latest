@@ -519,7 +519,6 @@ export const insertSupplyWithRelationsSchema = insertSupplySchema.extend({
     onHandQuantity: z.number().optional(),
     minimumQuantity: z.number().optional(),
     orderGroupSize: z.number().optional(),
-    allocationStatus: z.boolean().optional(),
   })).optional(),
 });
 
