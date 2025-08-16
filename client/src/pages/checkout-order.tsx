@@ -495,64 +495,8 @@ export default function CheckoutOrderPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center">
-                    <ShoppingCart className="w-5 h-5 mr-2" />
-                    Checkout Order
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label className="text-sm font-semibold text-gray-700 mb-2 block">Vendor</Label>
-                    <Select value={selectedVendor} onValueChange={setSelectedVendor}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select vendor" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {vendors.map((v) => (
-                          <SelectItem key={v.id} value={String(v.id)}>
-                            <div className="flex items-center justify-between w-full">
-                              <span>{v.company || v.name || `Vendor #${v.id}`}</span>
-        </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-        </div>
-
-                  <div className="rounded-lg bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 p-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <span>Selected items</span>
-                      <Badge variant="secondary">{selectedCount}</Badge>
-        </div>
-                    <div className="flex items-center justify-between text-sm mt-2">
-                      <span>Total quantity</span>
-                      <Badge variant="secondary">{orderTotalItems}</Badge>
-        </div>
-      </div>
-
-                  <Button
-                    onClick={handleCreateOrder}
-                    disabled={!selectedVendor || selectedCount === 0 || createOrderMutation.isPending}
-                    className="w-full"
-                  >
-                    {createOrderMutation.isPending ? "Creating..." : "Create Purchase Order"}
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    onClick={() => createGroupedOrders.mutate()}
-                    disabled={selectedCount === 0 || createGroupedOrders.isPending}
-                    className="w-full mt-2"
-                  >
-                    {createGroupedOrders.isPending ? "Creating..." : "Create POs by Preferred Vendors"}
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center">
                     <Filter className="w-4 h-4 mr-2" />
-                    Filters
+                    Manual Check-in / Check-out
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -572,7 +516,7 @@ export default function CheckoutOrderPage() {
 
                   <div>
                     <Label className="text-sm font-semibold text-gray-700 mb-2 block">Supply at location</Label>
-                      <Select value={selectedSupplyId} onValueChange={setSelectedSupplyId} disabled={!selectedLocationId}>
+                    <Select value={selectedSupplyId} onValueChange={setSelectedSupplyId} disabled={!selectedLocationId}>
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder={selectedLocationId ? "Select supply" : "Select location first"} />
                       </SelectTrigger>
@@ -584,9 +528,9 @@ export default function CheckoutOrderPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                      {selectedSupply && (
-                        <div className="text-xs text-gray-500 mt-1">Available: {selectedSupply.onHandQuantity}</div>
-                      )}
+                    {selectedSupply && (
+                      <div className="text-xs text-gray-500 mt-1">Available: {selectedSupply.onHandQuantity}</div>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -611,90 +555,11 @@ export default function CheckoutOrderPage() {
                   </div>
                 </CardContent>
               </Card>
-      </div>
+            </div>
 
             {/* Main */}
             <div className="lg:col-span-4">
-              <Card className="overflow-hidden">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="flex items-center">
-                      <FileText className="w-5 h-5 mr-2" />
-                      Need To Purchase
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {needsLoading ? (
-                    <div className="p-6 text-gray-500">Loading...</div>
-                  ) : rows.length === 0 ? (
-                    <div className="p-6 text-gray-500">No items need purchasing</div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-4 py-3 text-left w-10"></th>
-                            <th className="px-4 py-3 text-left">Location</th>
-                            <th className="px-4 py-3 text-left">Item</th>
-                            <th className="px-4 py-3 text-left">Piece Size</th>
-                            <th className="px-4 py-3 text-center">On Hand</th>
-                            <th className="px-4 py-3 text-center">Allocated</th>
-                            <th className="px-4 py-3 text-center">Available</th>
-                            <th className="px-4 py-3 text-center">Min</th>
-                            <th className="px-4 py-3 text-center">Reorder</th>
-                            <th className="px-4 py-3 text-center">Qty to Order</th>
-          </tr>
-        </thead>
-        <tbody>
-                          {rows.map((row) => {
-                            const key = `${row.supplyId}-${row.locationId}`;
-                            const value = qtyOverrides[key] ?? suggestedQty(row);
-                            return (
-                              <tr key={key} className="border-t">
-                                <td className="px-4 py-3 align-middle">
-                                  <input
-                                    type="checkbox"
-                                    checked={!!selectedRows[key]}
-                                    onChange={() => toggleRow(key)}
-                                  />
-                                </td>
-                                <td className="px-4 py-3 align-middle whitespace-nowrap">{row.location.name}</td>
-                                <td className="px-4 py-3 align-middle">
-                                  <div className="flex items-center space-x-2">
-                                    <div
-                                      className="w-4 h-4 rounded border"
-                                      style={{ backgroundColor: row.supply.hexColor }}
-                                    />
-                                    <span>{row.supply.name}</span>
-                                  </div>
-              </td>
-                                <td className="px-4 py-3 align-middle">{row.supply.pieceSize}</td>
-                                <td className="px-4 py-3 align-middle text-center">{row.onHandQuantity}</td>
-                                <td className="px-4 py-3 align-middle text-center">{row.allocatedQuantity ?? 0}</td>
-                                <td className="px-4 py-3 align-middle text-center">{typeof row.availableQuantity === 'number' ? row.availableQuantity : Math.max(0, (row.onHandQuantity || 0) - (row.allocatedQuantity || 0))}</td>
-                                <td className="px-4 py-3 align-middle text-center">{row.minimumQuantity}</td>
-                                <td className="px-4 py-3 align-middle text-center">{row.reorderPoint}</td>
-                                <td className="px-4 py-3 align-middle text-center">
-                                  <Input
-                  type="number"
-                                    value={value}
-                                    min={1}
-                                    onChange={(e) => setRowQty(key, Math.max(1, parseInt(e.target.value) || 1))}
-                                    className="w-28 mx-auto"
-                />
-              </td>
-            </tr>
-                            );
-                          })}
-        </tbody>
-      </table>
-    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* On Order */}
+              {/* On Order retained here */}
               <Card className="mt-6 overflow-hidden">
                 <CardHeader>
                   <div className="flex items-center justify-between">
@@ -819,43 +684,6 @@ export default function CheckoutOrderPage() {
                   )}
                 </CardContent>
               </Card>
-
-              {/* Email PO Modal */}
-              <Dialog open={emailOpen} onOpenChange={setEmailOpen}>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Email Purchase Order</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-3">
-                    <div>
-                      <Label>To</Label>
-                      <Input value={emailForm.to} onChange={(e) => setEmailForm((f) => ({ ...f, to: e.target.value }))} placeholder="vendor@example.com" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <Label>CC</Label>
-                        <Input value={emailForm.cc} onChange={(e) => setEmailForm((f) => ({ ...f, cc: e.target.value }))} placeholder="cc@example.com" />
-                      </div>
-                      <div>
-                        <Label>BCC</Label>
-                        <Input value={emailForm.bcc} onChange={(e) => setEmailForm((f) => ({ ...f, bcc: e.target.value }))} placeholder="bcc@example.com" />
-                      </div>
-                    </div>
-                    <div>
-                      <Label>Subject</Label>
-                      <Input value={emailForm.subject} onChange={(e) => setEmailForm((f) => ({ ...f, subject: e.target.value }))} placeholder="Subject" />
-                    </div>
-                    <div>
-                      <Label>Message</Label>
-                      <Textarea value={emailForm.message} onChange={(e) => setEmailForm((f) => ({ ...f, message: e.target.value }))} rows={6} placeholder="Message body" />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setEmailOpen(false)}>Cancel</Button>
-                    <Button onClick={() => sendEmailMutation.mutate()} disabled={sendEmailMutation.isPending}>Send Email</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
             </div>
           </div>
         </div>

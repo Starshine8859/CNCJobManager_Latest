@@ -843,6 +843,14 @@ export default function Supplies() {
         vendors: mappedVendors,
         locations: mappedLocations
       });
+      // Load location metrics for description analytics in edit mode
+      try {
+        const metricsRes = await fetch(`/api/supplies/${supply.id}/location-metrics`, { credentials: 'include' });
+        const metrics = await metricsRes.json();
+        setLocationMetrics(metrics || []);
+      } catch {
+        setLocationMetrics([]);
+      }
       setShowEditDialog(true);
     } catch (error) {
       console.error('Error fetching supply data for editing:', error);
@@ -1106,26 +1114,7 @@ export default function Supplies() {
                     >
                       <Edit className="w-4 h-4" />
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        setViewSupply(supply);
-                        setDialogMode('view');
-                        try {
-                          const res = await fetch(`/api/supplies/${supply.id}/location-metrics`, { credentials: 'include' });
-                          const data = await res.json();
-                          setLocationMetrics(data || []);
-                          setShowEditDialog(true);
-                        } catch {
-                          setLocationMetrics([]);
-                          setShowEditDialog(true);
-                        }
-                      }}
-                      className={`h-8 w-8 p-0 border-0 ${isDarkMode ? 'bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 text-slate-200' : 'bg-gradient-to-r from-slate-100 to-slate-200 hover:from-slate-200 hover:to-slate-300 text-slate-700'} rounded-xl`}
-                    >
-                      <Eye className="w-4 h-4" />
-                    </Button>
+                    
                     <Button
                       variant="outline"
                       size="sm"
@@ -1236,15 +1225,7 @@ export default function Supplies() {
                       </div>
                       
                         <div className="mt-4">
-                          <Label htmlFor="description" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Description</Label>
-                          <Textarea
-                            id="description"
-                            value={supplyForm.description}
-                            onChange={(e) => setSupplyForm(prev => ({ ...prev, description: e.target.value }))}
-                            placeholder="Enter description (optional)"
-                          className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
-                            rows={3}
-                        />
+                          {/* Description removed per requirement */}
                       </div>
                       
                         <div className="mt-4">
@@ -1757,16 +1738,17 @@ export default function Supplies() {
               </div>
               
               <div className="mt-4">
-                <Label htmlFor="editDescription" className={`text-sm font-bold ${themeClasses.textSecondary}`}>Description</Label>
+                <Label className={`text-sm font-bold ${themeClasses.textSecondary}`}>Description</Label>
                 <Textarea
-                  id="editDescription"
-                  value={editSupplyForm.description}
-                  onChange={(e) => setEditSupplyForm(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Enter description (optional)"
-                className={`mt-2 border-2 ${themeClasses.input} rounded-xl`}
-                  rows={3}
-              />
-            </div>
+                  readOnly
+                  value={(locationMetrics || []).map(r => `${r.locationName || 'Location ' + r.locationId}:
+On hand: ${r.onHandQuantity}
+Allocated: ${r.allocatedQuantity}
+Available: ${Math.max(0, (r.onHandQuantity || 0) - (r.allocatedQuantity || 0))}`).join("\n\n")}
+                  className={`mt-2 border-2 ${themeClasses.input} rounded-xl whitespace-pre-wrap`}
+                  rows={Math.max(3, Math.min(12, (locationMetrics?.length || 1) * 4))}
+                />
+              </div>
             
               <div className="mt-4">
               <Label className={`text-sm font-bold ${themeClasses.textSecondary}`}>Texture Image</Label>
