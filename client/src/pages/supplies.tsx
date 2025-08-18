@@ -411,7 +411,11 @@ export default function Supplies() {
         method: "DELETE",
         credentials: "include"
       });
-      if (!response.ok) throw new Error("Failed to delete supply");
+      if (!response.ok) {
+        let msg = "Failed to delete supply";
+        try { const j = await response.json(); if (j?.message) msg = j.message; } catch {}
+        throw new Error(msg);
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -968,6 +972,26 @@ export default function Supplies() {
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={async () => {
+                    setViewSupply(supply);
+                    setDialogMode('view');
+                    try {
+                      const res = await fetch(`/api/supplies/${supply.id}/location-metrics`, { credentials: 'include' });
+                      const data = await res.json();
+                      setLocationMetrics(data || []);
+                      setShowEditDialog(true);
+                    } catch {
+                      setLocationMetrics([]);
+                      setShowEditDialog(true);
+                    }
+                  }}
+                  className={`h-8 w-8 p-0 border-0 ${isDarkMode ? 'bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 text-slate-200' : 'bg-gradient-to-r from-slate-100 to-slate-200 hover:from-slate-200 hover:to-slate-300 text-slate-700'} rounded-xl`}
+                >
+                  <Eye className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => setSupplyToDelete(supply)}
                   className={`h-8 w-8 p-0 border-0 ${isDarkMode ? 'bg-gradient-to-r from-red-800 to-pink-800 hover:from-red-700 hover:to-pink-700 text-red-300' : 'bg-gradient-to-r from-red-100 to-pink-100 hover:from-red-200 hover:to-pink-200 text-red-700'} rounded-xl`}
                 >
@@ -1113,6 +1137,26 @@ export default function Supplies() {
                       className={`h-8 w-8 p-0 border-0 ${isDarkMode ? 'bg-gradient-to-r from-blue-800 to-indigo-800 hover:from-blue-700 hover:to-indigo-700 text-blue-300' : 'bg-gradient-to-r from-blue-100 to-indigo-100 hover:from-blue-200 hover:to-indigo-200 text-blue-700'} rounded-xl`}
                     >
                       <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        setViewSupply(supply);
+                        setDialogMode('view');
+                        try {
+                          const res = await fetch(`/api/supplies/${supply.id}/location-metrics`, { credentials: 'include' });
+                          const data = await res.json();
+                          setLocationMetrics(data || []);
+                          setShowEditDialog(true);
+                        } catch {
+                          setLocationMetrics([]);
+                          setShowEditDialog(true);
+                        }
+                      }}
+                      className={`h-8 w-8 p-0 border-0 ${isDarkMode ? 'bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 text-slate-200' : 'bg-gradient-to-r from-slate-100 to-slate-200 hover:from-slate-200 hover:to-slate-300 text-slate-700'} rounded-xl`}
+                    >
+                      <Eye className="w-4 h-4" />
                     </Button>
                     
                     <Button
@@ -1738,46 +1782,33 @@ export default function Supplies() {
               </div>
               
               <div className="mt-4">
-                <Label className={`text-sm font-bold ${themeClasses.textSecondary}`}>Description</Label>
-                <Textarea
-                  readOnly
-                  value={(locationMetrics || []).map(r => `${r.locationName || 'Location ' + r.locationId}:
-On hand: ${r.onHandQuantity}
-Allocated: ${r.allocatedQuantity}
-Available: ${Math.max(0, (r.onHandQuantity || 0) - (r.allocatedQuantity || 0))}`).join("\n\n")}
-                  className={`mt-2 border-2 ${themeClasses.input} rounded-xl whitespace-pre-wrap`}
-                  rows={Math.max(3, Math.min(12, (locationMetrics?.length || 1) * 4))}
-                />
-              </div>
-            
-              <div className="mt-4">
-              <Label className={`text-sm font-bold ${themeClasses.textSecondary}`}>Texture Image</Label>
-              <div className="flex items-center space-x-3 mt-2">
-                <Input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => handleFileUpload(e, true)}
-                  className={`border-2 ${themeClasses.input} rounded-xl`}
-                />
-                {editSupplyForm.texture && (
-                  <Button variant="outline" size="sm" onClick={() => clearTexture(true)} className="rounded-xl">
-                    <X className="w-4 h-4" />
-                  </Button>
-                )}
-              </div>
-              {editSupplyForm.texture && (
-                <div className="mt-4 flex justify-center">
-                  <TextureSwatch
-                    texture={editSupplyForm.texture}
-                    hexColor={editSupplyForm.hexColor}
-                    name={editSupplyForm.name}
-                    size="lg"
-                    isDarkMode={isDarkMode}
-                  />
-                </div>
-              )}
-              </div>
-            </div>
+               <Label className={`text-sm font-bold ${themeClasses.textSecondary}`}>Texture Image</Label>
+               <div className="flex items-center space-x-3 mt-2">
+                 <Input
+                   type="file"
+                   accept="image/*"
+                   onChange={(e) => handleFileUpload(e, true)}
+                   className={`border-2 ${themeClasses.input} rounded-xl`}
+                 />
+                 {editSupplyForm.texture && (
+                   <Button variant="outline" size="sm" onClick={() => clearTexture(true)} className="rounded-xl">
+                     <X className="w-4 h-4" />
+                   </Button>
+                 )}
+               </div>
+               {editSupplyForm.texture && (
+                 <div className="mt-4 flex justify-center">
+                   <TextureSwatch
+                     texture={editSupplyForm.texture}
+                     hexColor={editSupplyForm.hexColor}
+                     name={editSupplyForm.name}
+                     size="lg"
+                     isDarkMode={isDarkMode}
+                   />
+                 </div>
+               )}
+               </div>
+             </div>
             )}
 
             {dialogMode === 'edit' && (

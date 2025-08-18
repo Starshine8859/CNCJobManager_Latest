@@ -1426,7 +1426,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteSupply(id: number): Promise<void> {
-    await db.delete(supplies).where(eq(supplies.id, id));
+    // Delete dependent rows that can safely be removed; block if referenced by POs
+    await db.transaction(async (tx) => {
+      // If any purchase order items reference this supply, block deletion to preserve history
+      const poi = await tx.select({ count: sql<number>`count(*)` })
+        .from(purchaseOrderItems)
+        .where(eq(purchaseOrderItems.supplyId, id));
+      const numPoi = Number(poi?.[0]?.count || 0);
+      if (numPoi > 0) {
+        throw new Error("Cannot delete supply: it is referenced by existing purchase orders");
+      }
+
+      // Safe deletions in child tables
+      await tx.delete(supplyVendors).where(eq(supplyVendors.supplyId, id));
+      await tx.delete(supplyLocations).where(eq(supplyLocations.supplyId, id));
+      await tx.delete(supplyTransactions).where(eq(supplyTransactions.supplyId, id));
+      await tx.delete(inventoryMovements).where(eq(inventoryMovements.supplyId, id));
+
+      // Finally delete the supply
+      await tx.delete(supplies).where(eq(supplies.id, id));
+    });
   }
 
   async searchSupplies(query: string): Promise<SupplyWithLocation[]> {

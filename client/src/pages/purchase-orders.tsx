@@ -60,6 +60,7 @@ export default function PurchaseOrders() {
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 10;
+  const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const formatDateInput = (d: Date) => {
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -403,7 +404,7 @@ export default function PurchaseOrders() {
                       const dateOrdered = po.dateOrdered ?? po.createdAt;
                       const dateReceived = po.dateReceived;
                       return (
-                        <tr key={po.id} className="hover:bg-indigo-50/40 transition-colors">
+                        <tr key={po.id} className="hover:bg-indigo-50/40 transition-colors cursor-pointer" onClick={() => setSelectedOrder(po)}>
                           <td className="px-6 py-3 text-sm font-semibold text-gray-900">{po.poNumber}</td>
                           <td className="px-6 py-3 text-sm text-gray-700">{dateOrdered ? new Date(dateOrdered).toLocaleDateString() : "-"}</td>
                           <td className="px-6 py-3 text-sm text-gray-700">{dateReceived ? new Date(dateReceived).toLocaleDateString() : "-"}</td>
@@ -426,6 +427,68 @@ export default function PurchaseOrders() {
                 </div>
               </div>
             )}
+
+            <Dialog open={!!selectedOrder} onOpenChange={(open) => { if (!open) setSelectedOrder(null); }}>
+              <DialogContent className="max-w-4xl">
+                <DialogHeader>
+                  <DialogTitle>Purchase Order {selectedOrder?.poNumber}</DialogTitle>
+                </DialogHeader>
+                {selectedOrder && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-gray-700">
+                      <div>
+                        <div className="text-gray-500">Date ordered</div>
+                        <div>{selectedOrder.dateOrdered ? new Date(selectedOrder.dateOrdered).toLocaleDateString() : '-'}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500">Status</div>
+                        <div className="inline-flex items-center gap-2">
+                          <span className={`px-2 py-0.5 rounded text-xs border ${getStatusBadgeColor(selectedOrder.status || 'ordered')}`}>{selectedOrder.status || 'ordered'}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500">Total</div>
+                        <div className="font-medium">{formatCurrency(selectedOrder.totalAmount || 0)}</div>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto border rounded-lg">
+                      <table className="min-w-full">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-sm">Location</th>
+                            <th className="px-4 py-2 text-left text-sm">Item</th>
+                            <th className="px-4 py-2 text-left text-sm">Part #</th>
+                            <th className="px-4 py-2 text-center text-sm">Ordered</th>
+                            <th className="px-4 py-2 text-center text-sm">Received</th>
+                            <th className="px-4 py-2 text-right text-sm">Price</th>
+                            <th className="px-4 py-2 text-right text-sm">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(selectedOrder.items || []).map((it: any) => (
+                            <tr key={it.id} className="border-t">
+                              <td className="px-4 py-2 align-middle whitespace-nowrap">{(it.location && it.location.name) || '-'}</td>
+                              <td className="px-4 py-2 align-middle whitespace-nowrap">{(it.supply && it.supply.name) || '-'}</td>
+                              <td className="px-4 py-2 align-middle whitespace-nowrap">{(it.supply && it.supply.partNumber) || '-'}</td>
+                              <td className="px-4 py-2 align-middle text-center">{it.orderQuantity ?? it.quantity}</td>
+                              <td className="px-4 py-2 align-middle text-center">{it.receivedQuantity ?? 0}</td>
+                              <td className="px-4 py-2 align-middle text-right">{formatCurrency((it.pricePerUnit || 0))}</td>
+                              <td className="px-4 py-2 align-middle text-right">{formatCurrency((it.totalPrice || 0))}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {selectedOrder.additionalComments && (
+                      <div className="text-sm text-gray-600">
+                        <div className="text-gray-500 mb-1">Notes</div>
+                        <div className="whitespace-pre-line">{selectedOrder.additionalComments}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       </div>

@@ -762,8 +762,28 @@ export default function CheckoutOrderPage() {
                                         <Button
                                           variant="ghost"
                                           size="icon"
-                                          onClick={() => updateItemReceivedMutation.mutate({ poId: row.poId, itemId: row.itemId, receivedQuantity: currentQty })}
-                                          disabled={updateItemReceivedMutation.isPending}
+                                          onClick={async () => {
+                                            try {
+                                              // If user increased the received qty, also check-in the delta
+                                              if (row.location?.id && row.supply?.id) {
+                                                const delta = Math.max(0, (currentQty || 0) - (row.receivedQuantity || 0));
+                                                if (delta > 0) {
+                                                  await checkInMutation.mutateAsync({
+                                                    supplyId: row.supply.id,
+                                                    locationId: row.location.id,
+                                                    quantity: delta,
+                                                    referenceId: row.poId,
+                                                  });
+                                                }
+                                              }
+                                              await updateItemReceivedMutation.mutateAsync({ poId: row.poId, itemId: row.itemId, receivedQuantity: currentQty });
+                                              toast({ title: "Saved", description: "Received quantity updated" });
+                                              refetchOnOrder();
+                                            } catch (e: any) {
+                                              toast({ title: "Error", description: e?.message || "Failed to update received", variant: "destructive" });
+                                            }
+                                          }}
+                                          disabled={checkInMutation.isPending || updateItemReceivedMutation.isPending}
                                         >
                                           <CheckSquare className="w-4 h-4" />
                                         </Button>

@@ -796,7 +796,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteSupply(id);
       res.json({ message: "Supply deleted successfully" });
     } catch (error) {
-      res.status(500).json({ message: "Failed to delete supply" });
+      const message = error instanceof Error ? error.message : "Failed to delete supply";
+      const status = message.includes("purchase orders") ? 400 : 500;
+      res.status(status).json({ message });
     }
   });
 
