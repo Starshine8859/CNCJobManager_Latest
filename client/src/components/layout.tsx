@@ -131,7 +131,7 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" className={`font-medium pb-2 h-auto p-0 ${
-                      location.startsWith('/supplies') || location.startsWith('/purchase-orders') || location.startsWith('/checkout-order') || location.startsWith('/supply-locations') || location.startsWith('/inventory-movements') || location.startsWith('/enhanced-purchase-orders')
+                      location.startsWith('/supplies') || location.startsWith('/purchase-orders') || location.startsWith('/checkout-order') || location.startsWith('/supply-locations') || location.startsWith('/inventory-movements')
                         ? 'text-primary border-b-2 border-primary' 
                         : 'text-gray-500 hover:text-gray-700'
                     }`}>
@@ -165,10 +165,7 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
                       <Package className="h-4 w-4 mr-2" />
                       Inventory Movements
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setLocation("/enhanced-purchase-orders")}>
-                      <Package className="h-4 w-4 mr-2" />
-                      Enhanced Purchase Orders
-                    </DropdownMenuItem>
+                    
                   </DropdownMenuContent>
                 </DropdownMenu>
 

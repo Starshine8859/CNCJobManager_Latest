@@ -201,6 +201,49 @@ export default function CheckoutOrderPage() {
     return suppliesAtLocation.find((s) => s.id === id);
   }, [suppliesAtLocation, selectedSupplyId]);
 
+  // Manual add-to-order box state
+  const [manualOrderQty, setManualOrderQty] = useState<number>(1);
+  const [manualAdditions, setManualAdditions] = useState<NeedToPurchaseRow[]>([]);
+
+  const addManualItemToOrder = () => {
+    const locId = Number(selectedLocationId);
+    const supId = Number(selectedSupplyId);
+    if (!locId || !supId || !selectedSupply || manualOrderQty <= 0) return;
+    const loc = (locations as any[]).find((l: any) => l.id === locId);
+    const key = `${supId}-${locId}`;
+
+    const newRow: NeedToPurchaseRow = {
+      supplyId: supId,
+      locationId: locId,
+      onHandQuantity: selectedSupply.onHandQuantity || 0,
+      allocatedQuantity: 0,
+      availableQuantity: selectedSupply.onHandQuantity || 0,
+      minimumQuantity: 0,
+      reorderPoint: 0,
+      orderGroupSize: 1,
+      suggestedOrderQty: manualOrderQty,
+      supply: {
+        id: supId,
+        name: selectedSupply.name || "",
+        hexColor: "#cccccc",
+        pieceSize: "",
+      },
+      location: {
+        id: locId,
+        name: loc?.name || "",
+      },
+    };
+
+    setManualAdditions((prev) => {
+      // prevent duplicate identical row
+      if (prev.find((r) => r.supplyId === supId && r.locationId === locId)) return prev;
+      return [...prev, newRow];
+    });
+    setSelectedRows((prev) => ({ ...prev, [key]: true }));
+    setQtyOverrides((prev) => ({ ...prev, [key]: Math.max(1, manualOrderQty) }));
+    setManualOrderQty(1);
+  };
+
   const manualCheckIn = useMutation({
     mutationFn: async () => {
       if (!selectedLocationId || !selectedSupplyId || manualCheckInQty <= 0) throw new Error("Missing fields");
@@ -447,7 +490,7 @@ export default function CheckoutOrderPage() {
     return Math.max(group, groups * group);
   };
 
-  const rows = useMemo(() => needToPurchase, [needToPurchase]);
+  const rows = useMemo(() => [...needToPurchase, ...manualAdditions], [needToPurchase, manualAdditions]);
 
   const selectedCount = useMemo(
     () => rows.filter((r) => selectedRows[`${r.supplyId}-${r.locationId}`]).length,
@@ -489,20 +532,21 @@ export default function CheckoutOrderPage() {
     <Layout currentTime={currentTime}>
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/40">
         <div className="w-full px-6 py-8">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-            {/* Sidebar */}
-            <div className="lg:col-span-1 space-y-6">
-              <Card>
+          <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
+            {/* Main full-width */}
+            <div className="lg:col-span-1">
+              {/* Add Item to Order */}
+              <Card className="overflow-hidden">
                 <CardHeader>
                   <CardTitle className="flex items-center">
-                    <Filter className="w-4 h-4 mr-2" />
-                    Manual Check-in / Check-out
+                    <ShoppingCart className="w-5 h-5 mr-2" />
+                    Add item to order
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
                     <Label className="text-sm font-semibold text-gray-700 mb-2 block">Location</Label>
-                    <Select value={selectedLocationId} onValueChange={setSelectedLocationId}>
+                    <Select value={selectedLocationId} onValueChange={(v) => { setSelectedLocationId(v); setSelectedSupplyId(""); }}>
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select location" />
                       </SelectTrigger>
@@ -513,9 +557,8 @@ export default function CheckoutOrderPage() {
                       </SelectContent>
                     </Select>
                   </div>
-
                   <div>
-                    <Label className="text-sm font-semibold text-gray-700 mb-2 block">Supply at location</Label>
+                    <Label className="text-sm font-semibold text-gray-700 mb-2 block">Supply</Label>
                     <Select value={selectedSupplyId} onValueChange={setSelectedSupplyId} disabled={!selectedLocationId}>
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder={selectedLocationId ? "Select supply" : "Select location first"} />
@@ -523,42 +566,116 @@ export default function CheckoutOrderPage() {
                       <SelectContent>
                         {suppliesAtLocation.map((s) => (
                           <SelectItem key={s.id} value={String(s.id)}>
-                            {s.name} {s.partNumber ? `(${s.partNumber})` : ""} — on hand: {s.onHandQuantity}
+                            {s.name} {s.partNumber ? `(${s.partNumber})` : ""}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                     {selectedSupply && (
-                      <div className="text-xs text-gray-500 mt-1">Available: {selectedSupply.onHandQuantity}</div>
+                      <div className="text-xs text-gray-500 mt-1">On hand: {selectedSupply.onHandQuantity}</div>
                     )}
                   </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold text-gray-700">Manual Check-in</Label>
-                    <div className="flex flex-col gap-2">
-                      <Input className="w-full" type="number" min={1} value={manualCheckInQty || ""} onChange={(e) => setManualCheckInQty(Math.max(0, parseInt(e.target.value) || 0))} placeholder="Qty" />
-                      <div>
-                        <Button onClick={() => manualCheckIn.mutate()} disabled={!selectedLocationId || !selectedSupplyId || manualCheckIn.isPending || (manualCheckInQty <= 0)}>Check in</Button>
-                      </div>
-                    </div>
+                  <div>
+                    <Label className="text-sm font-semibold text-gray-700 mb-2 block">Qty to order</Label>
+                    <Input type="number" min={1} value={manualOrderQty} onChange={(e) => setManualOrderQty(Math.max(1, parseInt(e.target.value) || 1))} />
                   </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold text-gray-700">Manual Check-out</Label>
-                    <div className="flex flex-col gap-2">
-                      <Input className="w-full" type="number" min={1} value={manualCheckOutQty || ""} onChange={(e) => setManualCheckOutQty(Math.max(0, parseInt(e.target.value) || 0))} placeholder="Qty" />
-                      <Input className="w-full" type="text" value={manualNotes} onChange={(e) => setManualNotes(e.target.value)} placeholder="Description (optional)" />
-                      <div>
-                        <Button onClick={() => manualCheckOut.mutate()} disabled={!selectedLocationId || !selectedSupplyId || (manualCheckOut?.isPending ?? false) || (manualCheckOutQty <= 0) || (!!selectedSupply && manualCheckOutQty > (selectedSupply?.onHandQuantity || 0))}>Check out</Button>
-                      </div>
-                    </div>
+                  <div className="flex items-end">
+                    <Button className="w-full" onClick={addManualItemToOrder} disabled={!selectedLocationId || !selectedSupplyId || manualOrderQty <= 0}>Add to order list</Button>
                   </div>
                 </CardContent>
               </Card>
-            </div>
 
-            {/* Main */}
-            <div className="lg:col-span-4">
+              {/* Need To Purchase */}
+              <Card className="mt-6 overflow-hidden">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center">
+                      <FileText className="w-5 h-5 mr-2" />
+                      Need To Purchase
+                    </CardTitle>
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 px-3 py-1.5 text-sm">
+                        Selected: {selectedCount}
+                      </div>
+                      <div className="rounded-lg bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 px-3 py-1.5 text-sm">
+                        Total qty: {orderTotalItems}
+                      </div>
+                      <div className="w-64">
+                        <Select value={selectedVendor} onValueChange={setSelectedVendor}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select vendor (single PO)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {vendors.map((v: any) => (
+                              <SelectItem key={v.id} value={String(v.id)}>
+                                {v.company || v.name || `Vendor #${v.id}`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button onClick={handleCreateOrder} disabled={!selectedVendor || selectedCount === 0 || (createOrderMutation as any).isPending}>Create PO</Button>
+                      <Button variant="outline" onClick={() => (createGroupedOrders as any).mutate()} disabled={selectedCount === 0 || (createGroupedOrders as any).isPending}>Group by preferred vendors</Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {needsLoading ? (
+                    <div className="p-6 text-gray-500">Loading...</div>
+                  ) : rows.length === 0 ? (
+                    <div className="p-6 text-gray-500">No items need purchasing</div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left w-10"></th>
+                            <th className="px-4 py-3 text-left">Location</th>
+                            <th className="px-4 py-3 text-left">Item</th>
+                            <th className="px-4 py-3 text-left">Piece Size</th>
+                            <th className="px-4 py-3 text-center">On Hand</th>
+                            <th className="px-4 py-3 text-center">Allocated</th>
+                            <th className="px-4 py-3 text-center">Available</th>
+                            <th className="px-4 py-3 text-center">Min</th>
+                            <th className="px-4 py-3 text-center">Reorder</th>
+                            <th className="px-4 py-3 text-center">Qty to Order</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((row: any) => {
+                            const key = `${row.supplyId}-${row.locationId}`;
+                            const value = qtyOverrides[key] ?? suggestedQty(row);
+                            return (
+                              <tr key={key} className="border-t">
+                                <td className="px-4 py-3 align-middle">
+                                  <input type="checkbox" checked={!!selectedRows[key]} onChange={() => toggleRow(key)} />
+                                </td>
+                                <td className="px-4 py-3 align-middle whitespace-nowrap">{row.location.name}</td>
+                                <td className="px-4 py-3 align-middle">
+                                  <div className="flex items-center space-x-2">
+                                    <div className="w-4 h-4 rounded border" style={{ backgroundColor: row.supply.hexColor }} />
+                                    <span>{row.supply.name}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 align-middle">{row.supply.pieceSize}</td>
+                                <td className="px-4 py-3 align-middle text-center">{row.onHandQuantity}</td>
+                                <td className="px-4 py-3 align-middle text-center">{row.allocatedQuantity ?? 0}</td>
+                                <td className="px-4 py-3 align-middle text-center">{typeof row.availableQuantity === 'number' ? row.availableQuantity : Math.max(0, (row.onHandQuantity || 0) - (row.allocatedQuantity || 0))}</td>
+                                <td className="px-4 py-3 align-middle text-center">{row.minimumQuantity}</td>
+                                <td className="px-4 py-3 align-middle text-center">{row.reorderPoint}</td>
+                                <td className="px-4 py-3 align-middle text-center">
+                                  <Input type="number" value={value} min={1} onChange={(e) => setRowQty(key, Math.max(1, parseInt(e.target.value) || 1))} className="w-28 mx-auto" />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               {/* On Order retained here */}
               <Card className="mt-6 overflow-hidden">
                 <CardHeader>
