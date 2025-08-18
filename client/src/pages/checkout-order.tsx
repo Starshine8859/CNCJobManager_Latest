@@ -135,11 +135,20 @@ export default function CheckoutOrderPage() {
   // Local state for receiving quantities per item
   const [receiveQty, setReceiveQty] = useState<Record<number, number>>({});
   const [hideFullyReceived, setHideFullyReceived] = useState(true);
+  const [needPage, setNeedPage] = useState(1);
+  const [onOrderPage, setOnOrderPage] = useState(1);
+  const pageSize = 10;
 
   const displayedOnOrderRows: EnhancedPOItemRow[] = useMemo(() => {
-    if (!hideFullyReceived) return onOrderRows;
-    return onOrderRows.filter((r) => (r.receivedQuantity || 0) < (r.orderedQuantity || 0));
+    const base = !hideFullyReceived ? onOrderRows : onOrderRows.filter((r) => (r.receivedQuantity || 0) < (r.orderedQuantity || 0));
+    return base;
   }, [onOrderRows, hideFullyReceived]);
+
+  const totalOnOrder = displayedOnOrderRows.length;
+  const totalOnOrderPages = Math.max(1, Math.ceil(totalOnOrder / pageSize));
+  const onOrderStart = (onOrderPage - 1) * pageSize;
+  const onOrderEnd = Math.min(totalOnOrder, onOrderStart + pageSize);
+  const paginatedOnOrderRows = displayedOnOrderRows.slice(onOrderStart, onOrderEnd);
 
   // Update PO item received quantity
   const updateItemReceivedMutation = useMutation({
@@ -491,6 +500,11 @@ export default function CheckoutOrderPage() {
   };
 
   const rows = useMemo(() => [...needToPurchase, ...manualAdditions], [needToPurchase, manualAdditions]);
+  const totalNeed = rows.length;
+  const totalNeedPages = Math.max(1, Math.ceil(totalNeed / pageSize));
+  const needStart = (needPage - 1) * pageSize;
+  const needEnd = Math.min(totalNeed, needStart + pageSize);
+  const paginatedNeedRows = rows.slice(needStart, needEnd);
 
   const selectedCount = useMemo(
     () => rows.filter((r) => selectedRows[`${r.supplyId}-${r.locationId}`]).length,
@@ -642,7 +656,7 @@ export default function CheckoutOrderPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.map((row: any) => {
+                          {paginatedNeedRows.map((row: any) => {
                             const key = `${row.supplyId}-${row.locationId}`;
                             const value = qtyOverrides[key] ?? suggestedQty(row);
                             return (
@@ -671,6 +685,14 @@ export default function CheckoutOrderPage() {
                           })}
                         </tbody>
                       </table>
+                      <div className="flex items-center justify-between px-4 py-3 border-t bg-gray-50/60 text-sm text-gray-600">
+                        <div>Showing {totalNeed === 0 ? 0 : needStart + 1}-{needEnd} of {totalNeed}</div>
+                        <div className="flex items-center gap-2">
+                          <Button variant="outline" size="sm" onClick={() => setNeedPage(Math.max(1, needPage - 1))} disabled={needPage === 1}>Previous</Button>
+                          <span>Page {needPage} of {totalNeedPages}</span>
+                          <Button variant="outline" size="sm" onClick={() => setNeedPage(Math.min(totalNeedPages, needPage + 1))} disabled={needPage === totalNeedPages}>Next</Button>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </CardContent>
@@ -712,7 +734,7 @@ export default function CheckoutOrderPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {displayedOnOrderRows.map((row) => {
+                          {paginatedOnOrderRows.map((row) => {
                             const vendorName = row.vendorId ? (vendorById[row.vendorId]?.company || vendorById[row.vendorId]?.name || `Vendor #${row.vendorId}`) : "-";
                             const currentQty = receiveQty[row.itemId] ?? row.receivedQuantity ?? 0;
                             return (
@@ -797,6 +819,14 @@ export default function CheckoutOrderPage() {
                           })}
                         </tbody>
                       </table>
+                      <div className="flex items-center justify-between px-4 py-3 border-t bg-gray-50/60 text-sm text-gray-600">
+                        <div>Showing {totalOnOrder === 0 ? 0 : onOrderStart + 1}-{onOrderEnd} of {totalOnOrder}</div>
+                        <div className="flex items-center gap-2">
+                          <Button variant="outline" size="sm" onClick={() => setOnOrderPage(Math.max(1, onOrderPage - 1))} disabled={onOrderPage === 1}>Previous</Button>
+                          <span>Page {onOrderPage} of {totalOnOrderPages}</span>
+                          <Button variant="outline" size="sm" onClick={() => setOnOrderPage(Math.min(totalOnOrderPages, onOrderPage + 1))} disabled={onOrderPage === totalOnOrderPages}>Next</Button>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </CardContent>

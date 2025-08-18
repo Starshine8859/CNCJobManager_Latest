@@ -58,6 +58,8 @@ export default function PurchaseOrders() {
   const [currentTime] = useState(new Date());
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
   const formatDateInput = (d: Date) => {
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -164,6 +166,12 @@ export default function PurchaseOrders() {
     const matchesStatus = !statusFilter || po.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  const totalOrders = (filteredPurchaseOrders as any[]).length;
+  const totalPages = Math.max(1, Math.ceil(totalOrders / pageSize));
+  const startIndex = (page - 1) * pageSize;
+  const endIndex = Math.min(totalOrders, startIndex + pageSize);
+  const paginatedPurchaseOrders = (filteredPurchaseOrders as any[]).slice(startIndex, endIndex);
 
   const handleCreatePurchaseOrder = () => {
     setLocation("/create-purchase-order");
@@ -286,13 +294,7 @@ export default function PurchaseOrders() {
                 </div>
               </div>
 
-              <Button 
-                onClick={handleCreatePurchaseOrder}
-                className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 rounded-lg py-2.5"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Purchase Order
-              </Button>
+              
 
               {/* Creation controls removed: this page is lookup only */}
             </div>
@@ -395,7 +397,7 @@ export default function PurchaseOrders() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-100">
-                    {(filteredPurchaseOrders as any[]).map((po: any) => {
+                    {(paginatedPurchaseOrders as any[]).map((po: any) => {
                       const firstVendorId = po.items?.[0]?.vendorId as number | undefined;
                       const company = firstVendorId ? (vendorCompanyById[firstVendorId] ?? "-") : "-";
                       const dateOrdered = po.dateOrdered ?? po.createdAt;
@@ -412,6 +414,16 @@ export default function PurchaseOrders() {
                     })}
                   </tbody>
                 </table>
+                <div className="flex items-center justify-between px-6 py-3 border-t bg-gray-50/60 text-sm text-gray-600">
+                  <div>
+                    Showing {totalOrders === 0 ? 0 : startIndex + 1}-{endIndex} of {totalOrders}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}>Previous</Button>
+                    <span>Page {page} of {totalPages}</span>
+                    <Button variant="outline" size="sm" onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}>Next</Button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
