@@ -502,16 +502,13 @@ export default function CheckoutOrderPage() {
   const rows = useMemo(() => {
     const merged = [...needToPurchase, ...manualAdditions];
     return merged.filter((r) => {
-      const onHand = r.onHandQuantity || 0;
-      const allocated = r.allocatedQuantity || 0;
+      const onHand = Number(r.onHandQuantity) || 0;
+      const allocated = Number(r.allocatedQuantity) || 0;
       const available = typeof r.availableQuantity === 'number'
-        ? r.availableQuantity || 0
-        : Math.max(0, (r.onHandQuantity || 0) - (r.allocatedQuantity || 0));
-      // Hide rows where all three metrics are zero, unless a manual suggested qty exists
-      if (onHand === 0 && allocated === 0 && available === 0) {
-        return !!(r.suggestedOrderQty && r.suggestedOrderQty > 0);
-      }
-      return true;
+        ? (Number(r.availableQuantity) || 0)
+        : Math.max(0, (Number(r.onHandQuantity) || 0) - (Number(r.allocatedQuantity) || 0));
+      // Hide rows where all three metrics are zero (no exceptions)
+      return !(onHand === 0 && allocated === 0 && available === 0);
     });
   }, [needToPurchase, manualAdditions]);
   const totalNeed = rows.length;
