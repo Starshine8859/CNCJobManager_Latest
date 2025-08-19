@@ -507,8 +507,11 @@ export default function CheckoutOrderPage() {
       const available = typeof r.availableQuantity === 'number'
         ? (Number(r.availableQuantity) || 0)
         : Math.max(0, (Number(r.onHandQuantity) || 0) - (Number(r.allocatedQuantity) || 0));
-      // Hide rows where all three metrics are zero (no exceptions)
-      return !(onHand === 0 && allocated === 0 && available === 0);
+      const minQty = Number(r.minimumQuantity) || 0;
+      // Always include if on-hand is below minimum
+      if (onHand < minQty) return true;
+      // Otherwise hide only when all three metrics are zero and minimum is zero
+      return !(onHand === 0 && allocated === 0 && available === 0 && minQty === 0);
     });
   }, [needToPurchase, manualAdditions]);
   const totalNeed = rows.length;
