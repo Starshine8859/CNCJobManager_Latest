@@ -1828,6 +1828,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Reorder management
   app.get("/api/inventory/need-to-purchase", requireAuth, async (req, res) => {
     try {
+      // Compute outstanding on-order amount per supply/location from open POs
+      const onOrderAgg = await db
+        .select({
+          supplyId: purchaseOrderItems.supplyId,
+          locationId: purchaseOrderItems.locationId,
+          outstanding: sql<number>`SUM(GREATEST(${purchaseOrderItems.orderQuantity} - ${purchaseOrderItems.receivedQuantity}, 0))`,
+        })
+        .from(purchaseOrderItems)
+        .innerJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
+        .where(
+          or(
+            eq(purchaseOrders.status, 'ordered'),
+            eq(purchaseOrders.status, 'partially_received')
+          )
+        )
+        .groupBy(purchaseOrderItems.supplyId, purchaseOrderItems.locationId);
+
+      const outstandingByKey: Record<string, number> = {};
+      for (const row of onOrderAgg) {
+        if (row.supplyId && row.locationId) {
+          outstandingByKey[`${row.supplyId}-${row.locationId}`] = Number(row.outstanding) || 0;
+        }
+      }
+
       const rows = await db.select({
         supplyId: supplyLocations.supplyId,
         locationId: supplyLocations.locationId,
@@ -1867,6 +1891,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if ((r.allocatedQuantity || 0) > 0 && base < (r.allocatedQuantity || 0)) {
           base = r.allocatedQuantity || 0;
         }
+        // Subtract outstanding on-order amount so we don't double-order
+        const key = `${r.supplyId}-${r.locationId}`;
+        const outstanding = outstandingByKey[key] || 0;
+        base = Math.max(0, base - outstanding);
         const group = Math.max(1, r.orderGroupSize || 1);
         const groups = Math.ceil(base / group);
         const suggestedOrderQty = Math.max(group, groups * group);

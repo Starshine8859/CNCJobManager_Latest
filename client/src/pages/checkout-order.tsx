@@ -46,6 +46,9 @@ export default function CheckoutOrderPage() {
   const [selectedVendor, setSelectedVendor] = useState<string>("");
   const [qtyOverrides, setQtyOverrides] = useState<Record<string, number>>({});
   const [selectedRows, setSelectedRows] = useState<Record<string, boolean>>({});
+  // Track last ordered quantities per row to reduce remaining suggested qty after creating POs
+  const [lastOrderedByKey, setLastOrderedByKey] = useState<Record<string, number>>({});
+  const [lastOrderedRows, setLastOrderedRows] = useState<Record<string, NeedToPurchaseRow>>({});
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -78,6 +81,9 @@ export default function CheckoutOrderPage() {
     orderedQuantity: number;
     receivedQuantity: number;
     itemId: number;
+    // Fallback raw ids in case nested objects are not provided by API
+    supplyIdRaw?: number | null;
+    locationIdRaw?: number | null;
   }
 
   interface EnhancedPOResponse {
@@ -128,9 +134,26 @@ export default function CheckoutOrderPage() {
         orderedQuantity: it.orderQuantity,
         receivedQuantity: it.receivedQuantity || 0,
         itemId: it.id,
+        supplyIdRaw: (it as any).supplyId ?? null,
+        locationIdRaw: (it as any).locationId ?? null,
       }))
     );
   }, [onOrder]);
+
+  // Aggregate outstanding on-order quantity per supply-location key `${supplyId}-${locationId}`
+  const outstandingByKey = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const row of onOrderRows) {
+      const supplyId = row.supply?.id ?? row.supplyIdRaw ?? undefined;
+      const locationId = row.location?.id ?? row.locationIdRaw ?? undefined;
+      if (!supplyId || !locationId) continue;
+      const key = `${supplyId}-${locationId}`;
+      const outstanding = Math.max(0, (row.orderedQuantity || 0) - (row.receivedQuantity || 0));
+      if (outstanding <= 0) continue;
+      map[key] = (map[key] || 0) + outstanding;
+    }
+    return map;
+  }, [onOrderRows]);
 
   // Local state for receiving quantities per item
   const [receiveQty, setReceiveQty] = useState<Record<number, number>>({});
@@ -379,7 +402,7 @@ export default function CheckoutOrderPage() {
     },
     onSuccess: async (data: any) => {
       setSelectedRows({});
-      setQtyOverrides({});
+      // Do not clear qtyOverrides here; remaining overrides are applied per-call in handleCreateOrder
       queryClient.invalidateQueries({ queryKey: ["need-to-purchase"] });
       try {
         const poId = data?.order?.id;
@@ -434,6 +457,8 @@ export default function CheckoutOrderPage() {
       if (vendorIds.length === 0) throw new Error("No preferred vendors found for selected items");
 
       const results = [] as any[];
+      // Prepare overrides update accumulator so we reduce remaining qty per row
+      const overridesNext: Record<string, number> = { ...qtyOverrides };
       for (const vendorId of vendorIds) {
         const payload = {
           vendorId,
@@ -464,11 +489,20 @@ export default function CheckoutOrderPage() {
         } catch {}
         results.push(json);
       }
+      // Reduce remaining quantities for all selected rows
+      for (const r of selected) {
+        const key = `${r.supplyId}-${r.locationId}`;
+        const suggested = suggestedQty(r);
+        const ordered = overridesNext[key] || suggested;
+        const remaining = Math.max(0, suggested - ordered);
+        if (remaining > 0) overridesNext[key] = remaining; else delete overridesNext[key];
+      }
+      setQtyOverrides(overridesNext);
       return results;
     },
     onSuccess: () => {
       setSelectedRows({});
-      setQtyOverrides({});
+      // Do not clear overrides; we will apply remaining amounts per-call where we have the snapshot
       queryClient.invalidateQueries({ queryKey: ["need-to-purchase"] });
       refetchOnOrder();
       toast({ title: "Success", description: "Purchase orders created by preferred vendors" });
@@ -494,6 +528,10 @@ export default function CheckoutOrderPage() {
     if ((row.allocatedQuantity || 0) > 0 && base < (row.allocatedQuantity || 0)) {
       base = row.allocatedQuantity || 0;
     }
+    // Subtract outstanding on-order qty so we don't double-order
+    const key = `${row.supplyId}-${row.locationId}`;
+    const outstanding = outstandingByKey[key] || 0;
+    base = Math.max(0, base - outstanding);
     const group = Math.max(1, row.orderGroupSize || 1);
     const groups = Math.ceil(base / group);
     return Math.max(group, groups * group);
@@ -534,18 +572,27 @@ export default function CheckoutOrderPage() {
     if (!selectedVendor) return;
 
     const vendorId = parseInt(selectedVendor);
-    const items = rows
-      .filter((r) => selectedRows[`${r.supplyId}-${r.locationId}`])
-      .map((r) => ({
-        supplyId: r.supplyId,
-        vendorId,
-        locationId: r.locationId,
-        neededQuantity: suggestedQty(r),
-        orderQuantity: qtyOverrides[`${r.supplyId}-${r.locationId}`] || suggestedQty(r),
-        pricePerUnit: 0, // unknown here; can be updated later
-      }));
+    const selected = rows.filter((r) => selectedRows[`${r.supplyId}-${r.locationId}`]);
+    const items = selected.map((r) => ({
+      supplyId: r.supplyId,
+      vendorId,
+      locationId: r.locationId,
+      neededQuantity: suggestedQty(r),
+      orderQuantity: qtyOverrides[`${r.supplyId}-${r.locationId}`] || suggestedQty(r),
+      pricePerUnit: 0,
+    }));
 
     if (items.length === 0) return;
+
+    // After we submit, reduce remaining qty overrides for the selected rows
+    const overridesNext: Record<string, number> = { ...qtyOverrides };
+    selected.forEach((r) => {
+      const key = `${r.supplyId}-${r.locationId}`;
+      const suggested = suggestedQty(r);
+      const ordered = overridesNext[key] || suggested;
+      const remaining = Math.max(0, suggested - ordered);
+      if (remaining > 0) overridesNext[key] = remaining; else delete overridesNext[key];
+    });
 
     createOrderMutation.mutate({
       vendorId,
@@ -554,6 +601,8 @@ export default function CheckoutOrderPage() {
       items,
       sendEmail: false,
     });
+
+    setQtyOverrides(overridesNext);
   };
 
   return (
@@ -657,6 +706,7 @@ export default function CheckoutOrderPage() {
                       <table className="w-full">
                         <thead className="bg-gray-50">
                           <tr>
+                            <th className="px-4 py-3 text-left w-10"></th>
                             <th className="px-4 py-3 text-left">Location</th>
                             <th className="px-4 py-3 text-left">Item</th>
                             <th className="px-4 py-3 text-left">Piece Size</th>
@@ -673,13 +723,13 @@ export default function CheckoutOrderPage() {
                             const key = `${row.supplyId}-${row.locationId}`;
                             const value = qtyOverrides[key] ?? suggestedQty(row);
                             return (
-                              <tr key={key} className="border-t">
+                              <tr key={key} className={`border-t ${selectedRows[key] ? 'bg-indigo-50/40' : ''}`}>
+                                <td className="px-4 py-3 align-middle">
+                                  <input type="checkbox" checked={!!selectedRows[key]} onChange={() => toggleRow(key)} />
+                                </td>
                                 <td className="px-4 py-3 align-middle whitespace-nowrap">{row.location.name}</td>
                                 <td className="px-4 py-3 align-middle">
-                                  <div className="flex items-center space-x-2">
-                                    <div className="w-4 h-4 rounded border" style={{ backgroundColor: row.supply.hexColor }} />
-                                    <span>{row.supply.name}</span>
-                                  </div>
+                                  <span>{row.supply.name}</span>
                                 </td>
                                 <td className="px-4 py-3 align-middle">{row.supply.pieceSize}</td>
                                 <td className="px-4 py-3 align-middle text-center">{row.onHandQuantity}</td>
