@@ -657,7 +657,6 @@ export default function CheckoutOrderPage() {
                       <table className="w-full">
                         <thead className="bg-gray-50">
                           <tr>
-                            <th className="px-4 py-3 text-left w-10"></th>
                             <th className="px-4 py-3 text-left">Location</th>
                             <th className="px-4 py-3 text-left">Item</th>
                             <th className="px-4 py-3 text-left">Piece Size</th>
@@ -675,9 +674,6 @@ export default function CheckoutOrderPage() {
                             const value = qtyOverrides[key] ?? suggestedQty(row);
                             return (
                               <tr key={key} className="border-t">
-                                <td className="px-4 py-3 align-middle">
-                                  <input type="checkbox" checked={!!selectedRows[key]} onChange={() => toggleRow(key)} />
-                                </td>
                                 <td className="px-4 py-3 align-middle whitespace-nowrap">{row.location.name}</td>
                                 <td className="px-4 py-3 align-middle">
                                   <div className="flex items-center space-x-2">
