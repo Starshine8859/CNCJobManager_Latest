@@ -15,7 +15,11 @@ const sslConfig = isLocalhost ? false : { rejectUnauthorized: false };
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: sslConfig
+  ssl: sslConfig,
+  // Harden pool to reduce ECONNRESET from idling connections
+  max: parseInt(process.env.PG_POOL_MAX || '10', 10),
+  idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT_MS || '30000', 10),
+  connectionTimeoutMillis: parseInt(process.env.PG_CONN_TIMEOUT_MS || '10000', 10),
 });
 
 export const db = drizzle(pool, { schema });

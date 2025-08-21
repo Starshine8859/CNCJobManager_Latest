@@ -13,7 +13,7 @@ import sgMail from "@sendgrid/mail";
 import { createJobSchema, loginSchema, insertUserSchema, insertColorSchema, insertColorGroupSchema, insertSupplySchema, insertSupplyWithRelationsSchema, insertLocationSchema, insertVendorSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema, inventoryMovements, supplyLocations, supplies, locations, inventoryAlerts, locationCategories, purchaseOrders, purchaseOrderItems, vendors, emails } from "@shared/schema";
 import { pool } from "./db";
 import { db } from "./db";
-import { eq, and, or, lte, gte, desc, sql } from "drizzle-orm";
+import { eq, and, or, lte, gte, gt, desc, sql, inArray } from "drizzle-orm";
 import "./types";
 
 // File upload configuration
@@ -938,7 +938,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Enhanced Purchase Order Management
   app.get("/api/purchase-orders/enhanced", requireAuth, async (req, res) => {
     try {
-      const { fromDate, toDate, status } = req.query;
+      const { fromDate, toDate, status, outstandingOnly } = req.query;
       
       let conditions = [];
       if (fromDate) {
@@ -958,40 +958,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .orderBy(desc(purchaseOrders.createdAt));
       
       // Get items for each order
-      const ordersWithItems = await Promise.all(
-        orders.map(async (order) => {
-          const items = await db.select({
-            id: purchaseOrderItems.id,
-            supplyId: purchaseOrderItems.supplyId,
-            vendorId: purchaseOrderItems.vendorId,
-            locationId: purchaseOrderItems.locationId,
-            neededQuantity: purchaseOrderItems.neededQuantity,
-            orderQuantity: purchaseOrderItems.orderQuantity,
-            receivedQuantity: purchaseOrderItems.receivedQuantity,
-            pricePerUnit: purchaseOrderItems.pricePerUnit,
-            totalPrice: purchaseOrderItems.totalPrice,
-            supply: {
-              id: supplies.id,
-              name: supplies.name,
-              hexColor: supplies.hexColor,
-              pieceSize: supplies.pieceSize
-            },
-            location: {
-              id: locations.id,
-              name: locations.name
-            }
-          })
-          .from(purchaseOrderItems)
-          .leftJoin(supplies, eq(purchaseOrderItems.supplyId, supplies.id))
-          .leftJoin(locations, eq(purchaseOrderItems.locationId, locations.id))
-          .where(eq(purchaseOrderItems.purchaseOrderId, order.id));
-          
-          return {
-            ...order,
-            items
-          };
-        })
-      );
+      // Batch-load all items for these orders in a single query
+      const orderIds = orders.map((o) => o.id);
+      const allItems = orderIds.length === 0 ? [] : await db.select({
+        id: purchaseOrderItems.id,
+        purchaseOrderId: purchaseOrderItems.purchaseOrderId,
+        supplyId: purchaseOrderItems.supplyId,
+        vendorId: purchaseOrderItems.vendorId,
+        locationId: purchaseOrderItems.locationId,
+        neededQuantity: purchaseOrderItems.neededQuantity,
+        orderQuantity: purchaseOrderItems.orderQuantity,
+        receivedQuantity: purchaseOrderItems.receivedQuantity,
+        pricePerUnit: purchaseOrderItems.pricePerUnit,
+        totalPrice: purchaseOrderItems.totalPrice,
+        supply: {
+          id: supplies.id,
+          name: supplies.name,
+          hexColor: supplies.hexColor,
+          pieceSize: supplies.pieceSize
+        },
+        location: {
+          id: locations.id,
+          name: locations.name
+        }
+      })
+      .from(purchaseOrderItems)
+      .leftJoin(supplies, eq(purchaseOrderItems.supplyId, supplies.id))
+      .leftJoin(locations, eq(purchaseOrderItems.locationId, locations.id))
+      .where(inArray(purchaseOrderItems.purchaseOrderId, orderIds));
+
+      const itemsByOrder: Record<number, any[]> = {};
+      for (const it of allItems) {
+        const list = itemsByOrder[it.purchaseOrderId] || (itemsByOrder[it.purchaseOrderId] = []);
+        list.push(it);
+      }
+
+      const ordersWithItems = orders.map((order) => {
+        const items = itemsByOrder[order.id] || [];
+        const filteredItems = (String(outstandingOnly) === 'true')
+          ? items.filter((it: any) => (it.orderQuantity || 0) > (it.receivedQuantity || 0))
+          : items;
+        return { ...order, items: filteredItems };
+      });
       
       res.json(ordersWithItems);
     } catch (error) {
@@ -1896,15 +1904,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const outstanding = outstandingByKey[key] || 0;
         base = Math.max(0, base - outstanding);
         const group = Math.max(1, r.orderGroupSize || 1);
-        const groups = Math.ceil(base / group);
-        const suggestedOrderQty = Math.max(group, groups * group);
+        const suggestedOrderQty = base <= 0 ? 0 : Math.ceil(base / group) * group;
         return { ...r, available, suggestedOrderQty };
       });
 
-      res.json(enriched);
+      // Merge manual need-to-purchase items from session (persist across refresh per user)
+      const manualItems: Array<{ supplyId: number; locationId: number; quantity: number }> = (req.session as any).manualNeedToPurchase || [];
+      const manualByKey: Record<string, number> = {};
+      for (const m of manualItems) {
+        if (!m || !m.supplyId || !m.locationId) continue;
+        const k = `${m.supplyId}-${m.locationId}`;
+        manualByKey[k] = (manualByKey[k] || 0) + Math.max(0, Number(m.quantity) || 0);
+      }
+
+      const enrichedByKey: Record<string, any> = {};
+      for (const r of enriched) {
+        enrichedByKey[`${r.supplyId}-${r.locationId}`] = r;
+      }
+
+      // For any manual entry not already present, fetch its stock row so we can display it
+      const missingKeys = Object.keys(manualByKey).filter((k) => !enrichedByKey[k]);
+      if (missingKeys.length > 0) {
+        const parts = missingKeys.map((k) => k.split('-').map((n) => parseInt(n, 10))).filter(([s, l]) => s && l);
+        const supplyIds = parts.map(([s]) => s);
+        const locationIds = parts.map(([_, l]) => l);
+        const extraRows = await db.select({
+            supplyId: supplyLocations.supplyId,
+            locationId: supplyLocations.locationId,
+            onHandQuantity: supplyLocations.onHandQuantity,
+            allocatedQuantity: supplyLocations.allocatedQuantity,
+            availableQuantity: supplyLocations.availableQuantity,
+            minimumQuantity: supplyLocations.minimumQuantity,
+            reorderPoint: supplyLocations.reorderPoint,
+            orderGroupSize: supplyLocations.orderGroupSize,
+            supply: {
+              id: supplies.id,
+              name: supplies.name,
+              hexColor: supplies.hexColor,
+              pieceSize: supplies.pieceSize,
+              partNumber: supplies.partNumber,
+            },
+            location: {
+              id: locations.id,
+              name: locations.name
+            }
+          })
+          .from(supplyLocations)
+          .innerJoin(supplies, eq(supplyLocations.supplyId, supplies.id))
+          .innerJoin(locations, eq(supplyLocations.locationId, locations.id))
+          .where(and(inArray(supplyLocations.supplyId, supplyIds), inArray(supplyLocations.locationId, locationIds)));
+
+        for (const row of extraRows) {
+          const available = (row.availableQuantity ?? (row.onHandQuantity - (row.allocatedQuantity || 0))) || 0;
+          enrichedByKey[`${row.supplyId}-${row.locationId}`] = { ...row, available, suggestedOrderQty: 0 };
+        }
+      }
+
+      // Apply manual quantity overrides
+      for (const k of Object.keys(manualByKey)) {
+        if (enrichedByKey[k]) {
+          enrichedByKey[k].suggestedOrderQty = Math.max(1, manualByKey[k]);
+        }
+      }
+
+      // Apply per-user qty overrides from session (persist input across refresh)
+      const overrides: Record<string, number> = (req.session as any).needToPurchaseOverrides || {};
+      for (const k of Object.keys(overrides)) {
+        if (enrichedByKey[k]) {
+          const q = Number(overrides[k]);
+          if (!Number.isNaN(q) && q >= 0) {
+            enrichedByKey[k].suggestedOrderQty = q;
+          }
+        }
+      }
+
+      res.json(Object.values(enrichedByKey));
     } catch (error) {
       console.error('Need to purchase error:', error);
       res.status(500).json({ message: "Failed to fetch need to purchase data" });
+    }
+  });
+
+  // Add a manual Need To Purchase item to the current user's session
+  app.post("/api/inventory/need-to-purchase/manual", requireAuth, async (req, res) => {
+    try {
+      const { supplyId, locationId, quantity } = req.body || {};
+      const sid = parseInt(supplyId);
+      const lid = parseInt(locationId);
+      const qty = Math.max(1, parseInt(quantity));
+      if (!sid || !lid || !qty) {
+        return res.status(400).json({ message: 'supplyId, locationId and quantity are required' });
+      }
+      const sess: any = req.session;
+      if (!sess.manualNeedToPurchase) sess.manualNeedToPurchase = [];
+      sess.manualNeedToPurchase.push({ supplyId: sid, locationId: lid, quantity: qty });
+      await new Promise((resolve, reject) => sess.save((err: any) => err ? reject(err) : resolve(null)));
+      res.json({ message: 'Added', item: { supplyId: sid, locationId: lid, quantity: qty } });
+    } catch (error) {
+      console.error('Add manual need-to-purchase error:', error);
+      res.status(500).json({ message: 'Failed to add manual item' });
+    }
+  });
+
+  // Persist a per-user override for Qty to order (by supply/location)
+  app.post("/api/inventory/need-to-purchase/override", requireAuth, async (req, res) => {
+    try {
+      const { supplyId, locationId, quantity } = req.body || {};
+      const sid = parseInt(supplyId);
+      const lid = parseInt(locationId);
+      const qty = Number(quantity);
+      if (!sid || !lid || Number.isNaN(qty) || qty < 0) {
+        return res.status(400).json({ message: 'supplyId, locationId and non-negative quantity are required' });
+      }
+      const key = `${sid}-${lid}`;
+      const sess: any = req.session;
+      if (!sess.needToPurchaseOverrides) sess.needToPurchaseOverrides = {};
+      sess.needToPurchaseOverrides[key] = qty;
+      await new Promise((resolve, reject) => sess.save((err: any) => err ? reject(err) : resolve(null)));
+      res.json({ message: 'Override saved', key, quantity: qty });
+    } catch (error) {
+      console.error('Save need-to-purchase override error:', error);
+      res.status(500).json({ message: 'Failed to save override' });
     }
   });
 

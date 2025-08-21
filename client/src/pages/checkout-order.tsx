@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Package, ShoppingCart, Filter, Users, CheckSquare, FileText, Truck, Mail, Download } from "lucide-react";
 import Layout from "@/components/layout";
@@ -70,6 +70,66 @@ export default function CheckoutOrderPage() {
     },
   });
 
+  // Compute eligible vendors (intersection across selected supplies)
+  const [eligibleVendors, setEligibleVendors] = useState<any[]>([]);
+  const [loadingEligible, setLoadingEligible] = useState(false);
+  
+  const selectedKeys = useMemo(() => Object.keys(selectedRows).filter((k) => selectedRows[k]), [selectedRows]);
+  const selectedSupplyIds = useMemo(() => {
+    const idArray: number[] = [];
+    const seen: Record<number, boolean> = {};
+    for (const key of selectedKeys) {
+      const [sId] = key.split('-');
+      const sid = parseInt(sId, 10);
+      if (sid && !seen[sid]) {
+        seen[sid] = true;
+        idArray.push(sid);
+      }
+    }
+    return idArray;
+  }, [selectedKeys]);
+
+  const refreshEligibleVendors = async () => {
+    if (selectedSupplyIds.length === 0) {
+      setEligibleVendors([]);
+      return;
+    }
+    setLoadingEligible(true);
+    try {
+      const perSupply = await Promise.all(
+        selectedSupplyIds.map(async (sid) => {
+          const resp = await fetch(`/api/supplies/${sid}/vendors`, { credentials: 'include' });
+          if (!resp.ok) return [] as any[];
+          return resp.json();
+        })
+      );
+      // Build intersection of vendor ids
+      const vendorIdArrays: number[][] = perSupply.map(list => (list || []).map((v: any) => v.id).filter(Boolean));
+      let intersection: number[] = vendorIdArrays[0] ? [...vendorIdArrays[0]] : [];
+      for (let i = 1; i < vendorIdArrays.length; i++) {
+        const set = new Set(vendorIdArrays[i]);
+        intersection = intersection.filter((x) => set.has(x));
+      }
+      // Prefer objects from the first list for metadata
+      const firstList = perSupply[0] || [];
+      const intersectionSet = new Set(intersection);
+      const eligible = firstList.filter((v: any) => intersectionSet.has(v.id));
+      setEligibleVendors(eligible);
+      // If current selection is no longer eligible, clear it
+      if (selectedVendor && !eligible.some((v: any) => String(v.id) === String(selectedVendor))) {
+        setSelectedVendor("");
+      }
+    } finally {
+      setLoadingEligible(false);
+    }
+  };
+
+  // Recompute eligible vendors when selection changes
+  React.useEffect(() => {
+    refreshEligibleVendors();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSupplyIds.join(','), selectedKeys.join(',')]);
+
   // On Order (enhanced purchase orders)
   interface EnhancedPOItemRow {
     poId: number;
@@ -109,7 +169,7 @@ export default function CheckoutOrderPage() {
   const { data: onOrder = [], isLoading: onOrderLoading, refetch: refetchOnOrder } = useQuery<EnhancedPOResponse[]>({
     queryKey: ["enhanced-pos", "ordered"],
     queryFn: async () => {
-      const res = await fetch(`/api/purchase-orders/enhanced?status=ordered`, { credentials: "include" });
+      const res = await fetch(`/api/purchase-orders/enhanced?status=ordered&outstandingOnly=true`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch purchase orders");
       return res.json();
     },
@@ -235,45 +295,33 @@ export default function CheckoutOrderPage() {
 
   // Manual add-to-order box state
   const [manualOrderQty, setManualOrderQty] = useState<number>(1);
-  const [manualAdditions, setManualAdditions] = useState<NeedToPurchaseRow[]>([]);
 
-  const addManualItemToOrder = () => {
+  const addManualItemToOrder = async () => {
     const locId = Number(selectedLocationId);
     const supId = Number(selectedSupplyId);
     if (!locId || !supId || !selectedSupply || manualOrderQty <= 0) return;
-    const loc = (locations as any[]).find((l: any) => l.id === locId);
     const key = `${supId}-${locId}`;
-
-    const newRow: NeedToPurchaseRow = {
-      supplyId: supId,
-      locationId: locId,
-      onHandQuantity: selectedSupply.onHandQuantity || 0,
-      allocatedQuantity: 0,
-      availableQuantity: selectedSupply.onHandQuantity || 0,
-      minimumQuantity: 0,
-      reorderPoint: 0,
-      orderGroupSize: 1,
-      suggestedOrderQty: manualOrderQty,
-      supply: {
-        id: supId,
-        name: selectedSupply.name || "",
-        hexColor: "#cccccc",
-        pieceSize: "",
-      },
-      location: {
-        id: locId,
-        name: loc?.name || "",
-      },
-    };
-
-    setManualAdditions((prev) => {
-      // prevent duplicate identical row
-      if (prev.find((r) => r.supplyId === supId && r.locationId === locId)) return prev;
-      return [...prev, newRow];
-    });
-    setSelectedRows((prev) => ({ ...prev, [key]: true }));
-    setQtyOverrides((prev) => ({ ...prev, [key]: Math.max(1, manualOrderQty) }));
-    setManualOrderQty(1);
+    try {
+      const res = await fetch("/api/inventory/need-to-purchase/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ supplyId: supId, locationId: locId, quantity: manualOrderQty })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.message || "Failed to add manual item");
+      }
+      toast({ title: "Added", description: "Item added to Need To Purchase" });
+      // Highlight and set default qty to the requested amount
+      setSelectedRows((prev) => ({ ...prev, [key]: true }));
+      setQtyOverrides((prev) => ({ ...prev, [key]: Math.max(1, manualOrderQty) }));
+      setManualOrderQty(1);
+      // Refresh list to include persisted manual item
+      queryClient.invalidateQueries({ queryKey: ["need-to-purchase"] });
+    } catch (e: any) {
+      toast({ title: "Error", description: e?.message || "Failed to add item", variant: "destructive" });
+    }
   };
 
   const manualCheckIn = useMutation({
@@ -514,12 +562,25 @@ export default function CheckoutOrderPage() {
     setSelectedRows((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const setRowQty = (key: string, value: number) => {
+  const setRowQty = async (key: string, value: number) => {
     setQtyOverrides((prev) => ({ ...prev, [key]: value }));
+    // Persist override to server so it survives refresh
+    const [supplyIdStr, locationIdStr] = key.split('-');
+    const supplyId = parseInt(supplyIdStr, 10);
+    const locationId = parseInt(locationIdStr, 10);
+    if (!supplyId || !locationId) return;
+    try {
+      await fetch('/api/inventory/need-to-purchase/override', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ supplyId, locationId, quantity: value })
+      });
+    } catch {}
   };
 
   const suggestedQty = (row: NeedToPurchaseRow) => {
-    if (row.suggestedOrderQty && row.suggestedOrderQty > 0) return row.suggestedOrderQty;
+    if (row.suggestedOrderQty !== undefined && row.suggestedOrderQty !== null && row.suggestedOrderQty >= 0) return row.suggestedOrderQty;
     const available = typeof row.availableQuantity === 'number'
       ? row.availableQuantity
       : Math.max(0, (row.onHandQuantity || 0) - (row.allocatedQuantity || 0));
@@ -533,13 +594,13 @@ export default function CheckoutOrderPage() {
     const outstanding = outstandingByKey[key] || 0;
     base = Math.max(0, base - outstanding);
     const group = Math.max(1, row.orderGroupSize || 1);
+    if (base <= 0) return 0;
     const groups = Math.ceil(base / group);
-    return Math.max(group, groups * group);
+    return groups * group;
   };
 
   const rows = useMemo(() => {
-    const merged = [...needToPurchase, ...manualAdditions];
-    return merged.filter((r) => {
+    return needToPurchase.filter((r) => {
       const onHand = Number(r.onHandQuantity) || 0;
       const allocated = Number(r.allocatedQuantity) || 0;
       const available = typeof r.availableQuantity === 'number'
@@ -551,7 +612,7 @@ export default function CheckoutOrderPage() {
       // Otherwise hide only when all three metrics are zero and minimum is zero
       return !(onHand === 0 && allocated === 0 && available === 0 && minQty === 0);
     });
-  }, [needToPurchase, manualAdditions]);
+  }, [needToPurchase]);
   const totalNeed = rows.length;
   const totalNeedPages = Math.max(1, Math.ceil(totalNeed / pageSize));
   const needStart = (needPage - 1) * pageSize;
@@ -678,12 +739,12 @@ export default function CheckoutOrderPage() {
                         Total qty: {orderTotalItems}
                       </div>
                       <div className="w-64">
-                        <Select value={selectedVendor} onValueChange={setSelectedVendor}>
+                        <Select value={selectedVendor} onValueChange={setSelectedVendor} disabled={selectedCount === 0 || loadingEligible || eligibleVendors.length === 0}>
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select vendor (single PO)" />
+                            <SelectValue placeholder={selectedCount === 0 ? "Select rows first" : (eligibleVendors.length === 0 ? "No common vendors" : "Select vendor (common)")} />
                           </SelectTrigger>
                           <SelectContent>
-                            {vendors.map((v: any) => (
+                            {eligibleVendors.map((v: any) => (
                               <SelectItem key={v.id} value={String(v.id)}>
                                 {v.company || v.name || `Vendor #${v.id}`}
                               </SelectItem>
@@ -691,7 +752,7 @@ export default function CheckoutOrderPage() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <Button onClick={handleCreateOrder} disabled={!selectedVendor || selectedCount === 0 || (createOrderMutation as any).isPending}>Create PO</Button>
+                      <Button onClick={handleCreateOrder} disabled={!selectedVendor || selectedCount === 0 || eligibleVendors.length === 0 || (createOrderMutation as any).isPending}>Create PO</Button>
                       <Button variant="outline" onClick={() => (createGroupedOrders as any).mutate()} disabled={selectedCount === 0 || (createGroupedOrders as any).isPending}>Group by preferred vendors</Button>
                     </div>
                   </div>
@@ -805,7 +866,7 @@ export default function CheckoutOrderPage() {
                                 <td className="px-4 py-3 align-middle whitespace-nowrap">{row.supply?.partNumber || '-'}</td>
                                 <td className="px-4 py-3 align-middle whitespace-nowrap">{row.poNumber}</td>
                                 <td className="px-4 py-3 align-middle whitespace-nowrap">{vendorName}</td>
-                                <td className="px-4 py-3 align-middle text-center">{row.orderedQuantity}</td>
+                                <td className="px-4 py-3 align-middle text-center">{Math.max(0, (row.orderedQuantity || 0) - (row.receivedQuantity || 0))}</td>
                                 <td className="px-4 py-3 align-middle text-center">
                                   <Input
                                     type="number"
