@@ -1159,9 +1159,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { itemId } = req.params;
       const { receivedQuantity } = req.body;
-      
+      const [current] = await db.select({
+        orderQuantity: purchaseOrderItems.orderQuantity,
+        receivedQuantity: purchaseOrderItems.receivedQuantity,
+      }).from(purchaseOrderItems).where(eq(purchaseOrderItems.id, parseInt(itemId)));
+      const target = Math.max(0, Math.min(parseInt(receivedQuantity), current?.orderQuantity || 0));
       await db.update(purchaseOrderItems)
-        .set({ receivedQuantity: parseInt(receivedQuantity) })
+        .set({ receivedQuantity: target })
         .where(eq(purchaseOrderItems.id, parseInt(itemId)));
       
       res.json({ message: "Purchase order item updated successfully" });

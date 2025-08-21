@@ -872,7 +872,11 @@ export default function CheckoutOrderPage() {
                                     type="number"
                                     min={0}
                                     value={currentQty}
-                                    onChange={(e) => setReceiveQty((prev) => ({ ...prev, [row.itemId]: Math.max(0, parseInt(e.target.value) || 0) }))}
+                                    onChange={(e) => {
+                                      const v = parseInt(e.target.value) || 0;
+                                      const clamped = Math.max(0, Math.min(v, row.orderedQuantity || 0));
+                                      setReceiveQty((prev) => ({ ...prev, [row.itemId]: clamped }));
+                                    }}
                                     className="w-24 mx-auto"
                                   />
                                 </td>
@@ -887,7 +891,8 @@ export default function CheckoutOrderPage() {
                                             try {
                                               // If user increased the received qty, also check-in the delta
                                               if (row.location?.id && row.supply?.id) {
-                                                const delta = Math.max(0, (currentQty || 0) - (row.receivedQuantity || 0));
+                                                const target = Math.max(0, Math.min(currentQty || 0, row.orderedQuantity || 0));
+                                                const delta = Math.max(0, target - (row.receivedQuantity || 0));
                                                 if (delta > 0) {
                                                   await checkInMutation.mutateAsync({
                                                     supplyId: row.supply.id,
@@ -897,7 +902,8 @@ export default function CheckoutOrderPage() {
                                                   });
                                                 }
                                               }
-                                              await updateItemReceivedMutation.mutateAsync({ poId: row.poId, itemId: row.itemId, receivedQuantity: currentQty });
+                                              const clampedReceived = Math.max(0, Math.min(currentQty || 0, row.orderedQuantity || 0));
+                                              await updateItemReceivedMutation.mutateAsync({ poId: row.poId, itemId: row.itemId, receivedQuantity: clampedReceived });
                                               toast({ title: "Saved", description: "Received quantity updated" });
                                               refetchOnOrder();
                                             } catch (e: any) {
@@ -919,11 +925,13 @@ export default function CheckoutOrderPage() {
                                           onClick={async () => {
                                             try {
                                               if (!row.location?.id || !row.supply?.id) return;
-                                              const delta = Math.max(0, (currentQty || 0) - (row.receivedQuantity || 0));
+                                              const target = Math.max(0, Math.min(currentQty || 0, row.orderedQuantity || 0));
+                                              const delta = Math.max(0, target - (row.receivedQuantity || 0));
                                               if (delta > 0) {
                                                 await checkInMutation.mutateAsync({ supplyId: row.supply.id, locationId: row.location.id, quantity: delta, referenceId: row.poId });
                                               }
-                                              await updateItemReceivedMutation.mutateAsync({ poId: row.poId, itemId: row.itemId, receivedQuantity: currentQty || 0 });
+                                              const clampedReceived = Math.max(0, Math.min(currentQty || 0, row.orderedQuantity || 0));
+                                              await updateItemReceivedMutation.mutateAsync({ poId: row.poId, itemId: row.itemId, receivedQuantity: clampedReceived });
                                               toast({ title: "Success", description: delta > 0 ? "Received and checked in" : "Received updated" });
                                               refetchOnOrder();
                                             } catch (e: any) {
