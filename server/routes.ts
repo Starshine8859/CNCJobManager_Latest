@@ -594,17 +594,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/colors", requireAuth, async (req, res) => {
     try {
       const supplies = await storage.getAllSupplies()
-      // Transform supplies to match the old colors format for backward compatibility
-      const colors = supplies.map((supply) => ({
-        id: supply.id,
-        name: supply.name,
-        hexColor: supply.hexColor,
-        groupId: supply.location?.id || null,
-        texture: supply.texture,
-        createdAt: supply.createdAt,
-        updatedAt: supply.updatedAt,
-        group: supply.location ? { id: supply.location.id, name: supply.location.name } : null,
-      }))
+      const colors = supplies.map((supply) => {
+        const primaryLocation = supply.location
+
+        return {
+          id: supply.id,
+          name: supply.name,
+          hexColor: supply.hexColor || "#FFFFFF", // Provide fallback color
+          groupId: primaryLocation?.id || null,
+          texture: supply.texture,
+          createdAt: supply.createdAt,
+          updatedAt: supply.updatedAt,
+          group: primaryLocation
+            ? {
+                id: primaryLocation.id,
+                name: primaryLocation.name,
+              }
+            : null,
+        }
+      })
       res.json(colors)
     } catch (error) {
       console.error("Error fetching colors:", error)
@@ -615,27 +623,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/colors", requireAuth, async (req, res) => {
     try {
       const colorData = req.body
-      // Transform color data to supply format
       const supplyData = {
         name: colorData.name,
-        hexColor: colorData.hexColor,
+        hexColor: colorData.hexColor || "#FFFFFF",
         pieceSize: "sheet",
         quantityOnHand: 0,
         locationId: colorData.groupId,
-        texture: colorData.texture,
+        texture: colorData.texture || null,
         defaultVendor: "",
         defaultVendorPrice: undefined,
       }
       const supply = await storage.createSupply(supplyData)
-      // Transform back to color format
       const color = {
         id: supply.id,
         name: supply.name,
         hexColor: supply.hexColor,
-        groupId: null, // New supplies don't have location until added to supply_locations
+        groupId: colorData.groupId || null,
         texture: supply.texture,
         createdAt: supply.createdAt,
         updatedAt: supply.updatedAt,
+        group: null, // Will be populated when locations are assigned
       }
       res.json(color)
     } catch (error) {
@@ -648,12 +655,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = Number.parseInt(req.params.id)
       const colorData = req.body
-      // Transform color data to supply format
       const supplyData = {
         name: colorData.name,
-        hexColor: colorData.hexColor,
-        locationId: colorData.groupId,
-        texture: colorData.texture,
+        hexColor: colorData.hexColor || "#FFFFFF",
+        texture: colorData.texture || null,
+        // Note: locationId is handled separately through supply_locations table
       }
       await storage.updateSupply(id, supplyData)
       res.json({ message: "Color updated successfully" })

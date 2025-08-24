@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -12,44 +12,174 @@ import { Plus, Trash2, CheckCircle2, Circle } from "lucide-react"
 import Layout from "@/components/layout"
 
 interface ChecklistItem {
-  id: string
-  text: string
-  completed: boolean
-  addedAt: Date
+  id: number
+  name: string
+  description?: string
+  category: string
+  isCompleted: boolean
+  completedAt?: string
+  createdAt: string
+}
+
+interface PartChecklist {
+  id: number
+  name: string
+  description?: string
+  isTemplate: boolean
+  jobId?: number
+  items: ChecklistItem[]
 }
 
 export default function JobPreparation() {
   const [activeTab, setActiveTab] = useState("sheets")
-  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([])
+  const [checklist, setChecklist] = useState<PartChecklist | null>(null)
   const [newItemText, setNewItemText] = useState("")
+  const [loading, setLoading] = useState(true)
 
-  // Add new checklist item
-  const addChecklistItem = () => {
-    if (newItemText.trim()) {
-      const newItem: ChecklistItem = {
-        id: Date.now().toString(),
-        text: newItemText.trim(),
-        completed: false,
-        addedAt: new Date(),
+  useEffect(() => {
+    loadChecklist()
+  }, [])
+
+  const loadChecklist = async () => {
+    try {
+      setLoading(true)
+      // Get or create a default checklist for job preparation
+      const response = await fetch("/api/part-checklists?isTemplate=true")
+      const checklists = await response.json()
+
+      let defaultChecklist = checklists.find((c: PartChecklist) => c.name === "Job Preparation")
+
+      if (!defaultChecklist) {
+        // Create default checklist if it doesn't exist
+        const createResponse = await fetch("/api/part-checklists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: "Job Preparation",
+            description: "Default job preparation checklist",
+            isTemplate: true,
+            createdBy: 1, // TODO: Get from auth context
+          }),
+        })
+        defaultChecklist = await createResponse.json()
       }
-      setChecklistItems([...checklistItems, newItem])
-      setNewItemText("")
+
+      // Load checklist with items
+      const checklistResponse = await fetch(`/api/part-checklists/${defaultChecklist.id}`)
+      const checklistWithItems = await checklistResponse.json()
+      setChecklist(checklistWithItems)
+    } catch (error) {
+      console.error("Error loading checklist:", error)
+    } finally {
+      setLoading(false)
     }
   }
 
-  // Toggle checklist item completion
-  const toggleChecklistItem = (id: string) => {
-    setChecklistItems((items) => items.map((item) => (item.id === id ? { ...item, completed: !item.completed } : item)))
+  const addChecklistItem = async () => {
+    if (!newItemText.trim() || !checklist) return
+
+    try {
+      const response = await fetch(`/api/part-checklists/${checklist.id}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newItemText.trim(),
+          category: activeTab,
+          sortOrder: checklist.items.length,
+        }),
+      })
+
+      if (response.ok) {
+        const newItem = await response.json()
+        setChecklist((prev) =>
+          prev
+            ? {
+                ...prev,
+                items: [...prev.items, newItem],
+              }
+            : null,
+        )
+        setNewItemText("")
+      }
+    } catch (error) {
+      console.error("Error adding checklist item:", error)
+    }
   }
 
-  // Remove checklist item
-  const removeChecklistItem = (id: string) => {
-    setChecklistItems((items) => items.filter((item) => item.id !== id))
+  const toggleChecklistItem = async (itemId: number) => {
+    if (!checklist) return
+
+    const item = checklist.items.find((i) => i.id === itemId)
+    if (!item) return
+
+    try {
+      const response = await fetch(`/api/part-checklists/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          isCompleted: !item.isCompleted,
+          completedBy: 1, // TODO: Get from auth context
+        }),
+      })
+
+      if (response.ok) {
+        const updatedItem = await response.json()
+        setChecklist((prev) =>
+          prev
+            ? {
+                ...prev,
+                items: prev.items.map((i) => (i.id === itemId ? updatedItem : i)),
+              }
+            : null,
+        )
+      }
+    } catch (error) {
+      console.error("Error toggling checklist item:", error)
+    }
   }
 
-  // Get completed and pending items
-  const completedItems = checklistItems.filter((item) => item.completed)
-  const pendingItems = checklistItems.filter((item) => !item.completed)
+  const removeChecklistItem = async (itemId: number) => {
+    if (!checklist) return
+
+    try {
+      const response = await fetch(`/api/part-checklists/items/${itemId}`, {
+        method: "DELETE",
+      })
+
+      if (response.ok) {
+        setChecklist((prev) =>
+          prev
+            ? {
+                ...prev,
+                items: prev.items.filter((i) => i.id !== itemId),
+              }
+            : null,
+        )
+      }
+    } catch (error) {
+      console.error("Error removing checklist item:", error)
+    }
+  }
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="p-6">
+          <div className="flex items-center justify-center h-64">
+            <div className="text-lg">Loading job preparation...</div>
+          </div>
+        </div>
+      </Layout>
+    )
+  }
+
+  const getItemsByCategory = (category: string) => {
+    return checklist?.items.filter((item) => item.category === category) || []
+  }
+
+  const checklistItems = checklist?.items || []
+  const completedItems = checklistItems.filter((item) => item.isCompleted)
+  const pendingItems = checklistItems.filter((item) => !item.isCompleted)
 
   return (
     <Layout>
@@ -90,6 +220,30 @@ export default function JobPreparation() {
                     </div>
                   </div>
                   <Button>Add Sheet Specification</Button>
+
+                  <div className="mt-6">
+                    <h3 className="text-lg font-medium mb-3">Sheet Preparation Tasks</h3>
+                    <div className="space-y-2">
+                      {getItemsByCategory("sheets").map((item) => (
+                        <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
+                          <div className="flex items-center space-x-3">
+                            <Checkbox checked={item.isCompleted} onCheckedChange={() => toggleChecklistItem(item.id)} />
+                            <span className={`text-sm ${item.isCompleted ? "line-through text-gray-600" : ""}`}>
+                              {item.name}
+                            </span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeChecklistItem(item.id)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -122,6 +276,30 @@ export default function JobPreparation() {
                     </div>
                   </div>
                   <Button>Add Hardware Item</Button>
+
+                  <div className="mt-6">
+                    <h3 className="text-lg font-medium mb-3">Hardware Preparation Tasks</h3>
+                    <div className="space-y-2">
+                      {getItemsByCategory("hardware").map((item) => (
+                        <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
+                          <div className="flex items-center space-x-3">
+                            <Checkbox checked={item.isCompleted} onCheckedChange={() => toggleChecklistItem(item.id)} />
+                            <span className={`text-sm ${item.isCompleted ? "line-through text-gray-600" : ""}`}>
+                              {item.name}
+                            </span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeChecklistItem(item.id)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -154,6 +332,30 @@ export default function JobPreparation() {
                     </div>
                   </div>
                   <Button>Add Rod Specification</Button>
+
+                  <div className="mt-6">
+                    <h3 className="text-lg font-medium mb-3">Rod Preparation Tasks</h3>
+                    <div className="space-y-2">
+                      {getItemsByCategory("rods").map((item) => (
+                        <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
+                          <div className="flex items-center space-x-3">
+                            <Checkbox checked={item.isCompleted} onCheckedChange={() => toggleChecklistItem(item.id)} />
+                            <span className={`text-sm ${item.isCompleted ? "line-through text-gray-600" : ""}`}>
+                              {item.name}
+                            </span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeChecklistItem(item.id)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -238,8 +440,8 @@ export default function JobPreparation() {
                     {pendingItems.map((item) => (
                       <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
                         <div className="flex items-center space-x-3">
-                          <Checkbox checked={item.completed} onCheckedChange={() => toggleChecklistItem(item.id)} />
-                          <span className="text-sm">{item.text}</span>
+                          <Checkbox checked={item.isCompleted} onCheckedChange={() => toggleChecklistItem(item.id)} />
+                          <span className="text-sm">{item.name}</span>
                         </div>
                         <Button
                           variant="ghost"
@@ -273,8 +475,8 @@ export default function JobPreparation() {
                         className="flex items-center justify-between p-3 border rounded-lg bg-green-50"
                       >
                         <div className="flex items-center space-x-3">
-                          <Checkbox checked={item.completed} onCheckedChange={() => toggleChecklistItem(item.id)} />
-                          <span className="text-sm line-through text-gray-600">{item.text}</span>
+                          <Checkbox checked={item.isCompleted} onCheckedChange={() => toggleChecklistItem(item.id)} />
+                          <span className="text-sm line-through text-gray-600">{item.name}</span>
                         </div>
                         <Button
                           variant="ghost"

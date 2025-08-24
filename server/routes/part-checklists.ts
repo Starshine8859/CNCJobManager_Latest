@@ -15,15 +15,24 @@ router.get("/", async (req, res) => {
   try {
     const { jobId, isTemplate } = req.query
 
-    let query = db.select().from(partChecklists)
+    let checklists
 
     if (jobId) {
-      query = query.where(eq(partChecklists.jobId, Number.parseInt(jobId as string)))
+      checklists = await db
+        .select()
+        .from(partChecklists)
+        .where(eq(partChecklists.jobId, Number.parseInt(jobId as string)))
+        .orderBy(desc(partChecklists.createdAt))
     } else if (isTemplate !== undefined) {
-      query = query.where(eq(partChecklists.isTemplate, isTemplate === "true"))
+      checklists = await db
+        .select()
+        .from(partChecklists)
+        .where(eq(partChecklists.isTemplate, isTemplate === "true"))
+        .orderBy(desc(partChecklists.createdAt))
+    } else {
+      checklists = await db.select().from(partChecklists).orderBy(desc(partChecklists.createdAt))
     }
 
-    const checklists = await query.orderBy(desc(partChecklists.createdAt))
     res.json(checklists)
   } catch (error) {
     console.error("Error fetching checklists:", error)
