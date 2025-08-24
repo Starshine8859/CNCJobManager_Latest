@@ -1,45 +1,48 @@
-import { Switch, Route } from "wouter";
-import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "@/components/ui/toaster";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import Dashboard from "@/pages/dashboard";
-import Login from "@/pages/login";
-import Admin from "@/pages/admin";
-import UserManagement from "@/pages/user-management";
-import PopupPage from "@/pages/popup";
-import NotFound from "@/pages/not-found";
-import Supplies from "@/pages/supplies";
-import PurchaseOrders from "@/pages/purchase-orders";
-import CreatePurchaseOrder from "@/pages/create-purchase-order";
-import CheckoutOrder from "@/pages/checkout-order";
-import SupplyLocations from "@/pages/supply-locations";
-import Vendors from "@/pages/vendors";
-import InventoryMovements from "@/pages/inventory-movements";
-import EmailCenterPage from "@/pages/email";
-import { useAuth } from "@/lib/auth";
-import { useQuery } from "@tanstack/react-query";
+"use client"
+
+import { Switch, Route } from "wouter"
+import { queryClient } from "./lib/queryClient"
+import { QueryClientProvider } from "@tanstack/react-query"
+import { Toaster } from "@/components/ui/toaster"
+import { TooltipProvider } from "@/components/ui/tooltip"
+import Dashboard from "@/pages/dashboard"
+import Login from "@/pages/login"
+import Admin from "@/pages/admin"
+import UserManagement from "@/pages/user-management"
+import PopupPage from "@/pages/popup"
+import NotFound from "@/pages/not-found"
+import Supplies from "@/pages/supplies"
+import PurchaseOrders from "@/pages/purchase-orders"
+import CreatePurchaseOrder from "@/pages/create-purchase-order"
+import CheckoutOrder from "@/pages/checkout-order"
+import SupplyLocations from "@/pages/supply-locations"
+import Vendors from "@/pages/vendors"
+import InventoryMovements from "@/pages/inventory-movements"
+import EmailCenterPage from "@/pages/email"
+import JobPreparation from "@/pages/job-preparation"
+import { useAuth } from "@/lib/auth"
+import { useQuery } from "@tanstack/react-query"
 
 function Router() {
-  const { user, loading } = useAuth();
+  const { user, loading } = useAuth()
 
   // Check if setup is required
   const { data: setupData, isLoading: setupLoading } = useQuery<{ required: boolean }>({
-    queryKey: ['/api/setup/required'],
+    queryKey: ["/api/setup/required"],
     retry: false,
-  });
+  })
 
   if (loading || setupLoading) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
         <div className="text-lg text-gray-600">Loading...</div>
       </div>
-    );
+    )
   }
 
   // Always show login page first (it handles setup internally)
   if (!user) {
-    return <Login />;
+    return <Login />
   }
 
   return (
@@ -56,9 +59,10 @@ function Router() {
       <Route path="/vendors" component={Vendors} />
       <Route path="/inventory-movements" component={InventoryMovements} />
       <Route path="/email" component={EmailCenterPage} />
+      <Route path="/job-preparation" component={JobPreparation} />
       <Route component={NotFound} />
     </Switch>
-  );
+  )
 }
 
 function App() {
@@ -69,7 +73,7 @@ function App() {
         <Router />
       </TooltipProvider>
     </QueryClientProvider>
-  );
+  )
 }
 
-export default App;
+export default App

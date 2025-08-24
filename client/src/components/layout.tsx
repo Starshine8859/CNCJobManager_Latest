@@ -1,99 +1,107 @@
-import { useState } from "react";
-import { Link, useLocation } from "wouter";
-import { Clock, Menu, X, Settings, LogOut, Plus, Package, ChevronDown, Mail } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
-import { useAuth } from "@/lib/auth";
-import { useToast } from "@/hooks/use-toast";
+"use client"
+
+import type React from "react"
+
+import { useState } from "react"
+import { Link, useLocation } from "wouter"
+import { Clock, Menu, X, LogOut, Plus, Package, ChevronDown, Mail, Wrench } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { useQuery, useMutation } from "@tanstack/react-query"
+import { apiRequest } from "@/lib/queryClient"
+import { useAuth } from "@/lib/auth"
+import { useToast } from "@/hooks/use-toast"
 
 interface LayoutProps {
-  children: React.ReactNode;
-  currentTime?: Date;
+  children: React.ReactNode
+  currentTime?: Date
 }
 
 export default function Layout({ children, currentTime = new Date() }: LayoutProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [location, setLocation] = useLocation();
-  const { user } = useAuth();
-  const { toast } = useToast();
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [location, setLocation] = useLocation()
+  const { user } = useAuth()
+  const { toast } = useToast()
 
   // Fetch dashboard stats for sidebar
   const { data: stats } = useQuery<{
-    activeJobs: number;
-    sheetsCutToday: number;
-    avgJobTime: number;
-    avgSheetTime: number;
-    materialColors: number;
-    jobsByStatus: { waiting: number; in_progress: number; paused: number; done: number };
+    activeJobs: number
+    sheetsCutToday: number
+    avgJobTime: number
+    avgSheetTime: number
+    materialColors: number
+    jobsByStatus: { waiting: number; in_progress: number; paused: number; done: number }
   }>({
-    queryKey: ['/api/dashboard/stats'],
+    queryKey: ["/api/dashboard/stats"],
     refetchInterval: 30000,
-  });
+  })
 
   const logoutMutation = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/logout'),
+    mutationFn: () => apiRequest("POST", "/api/logout"),
     onSuccess: () => {
-      window.location.reload();
+      window.location.reload()
     },
     onError: () => {
       toast({
         title: "Error",
         description: "Failed to logout",
         variant: "destructive",
-      });
+      })
     },
-  });
+  })
 
   const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
+    return date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
       hour12: true,
-    });
-  };
+    })
+  }
 
-  const totalJobs = Number(stats?.jobsByStatus?.waiting || 0) + Number(stats?.jobsByStatus?.in_progress || 0) + Number(stats?.jobsByStatus?.paused || 0) + Number(stats?.jobsByStatus?.done || 0);
+  const totalJobs =
+    Number(stats?.jobsByStatus?.waiting || 0) +
+    Number(stats?.jobsByStatus?.in_progress || 0) +
+    Number(stats?.jobsByStatus?.paused || 0) +
+    Number(stats?.jobsByStatus?.done || 0)
 
   const statusFilters = [
     {
-      key: 'all',
-      label: 'All jobs',
-      color: 'bg-blue-500',
+      key: "all",
+      label: "All jobs",
+      color: "bg-blue-500",
       count: totalJobs,
-      badgeColor: 'bg-blue-100 text-blue-600',
+      badgeColor: "bg-blue-100 text-blue-600",
     },
     {
-      key: 'waiting',
-      label: 'Waiting',
-      color: 'bg-gray-400',
+      key: "waiting",
+      label: "Waiting",
+      color: "bg-gray-400",
       count: Number(stats?.jobsByStatus?.waiting || 0),
-      badgeColor: 'bg-gray-100 text-gray-600',
+      badgeColor: "bg-gray-100 text-gray-600",
     },
     {
-      key: 'in_progress',
-      label: 'In Progress',
-      color: 'bg-orange-500',
+      key: "in_progress",
+      label: "In Progress",
+      color: "bg-orange-500",
       count: Number(stats?.jobsByStatus?.in_progress || 0),
-      badgeColor: 'bg-orange-100 text-orange-600',
+      badgeColor: "bg-orange-100 text-orange-600",
     },
     {
-      key: 'paused',
-      label: 'Paused',
-      color: 'bg-yellow-500',
+      key: "paused",
+      label: "Paused",
+      color: "bg-yellow-500",
       count: Number(stats?.jobsByStatus?.paused || 0),
-      badgeColor: 'bg-yellow-100 text-yellow-600',
+      badgeColor: "bg-yellow-100 text-yellow-600",
     },
     {
-      key: 'done',
-      label: 'Done',
-      color: 'bg-green-500',
+      key: "done",
+      label: "Done",
+      color: "bg-green-500",
       count: Number(stats?.jobsByStatus?.done || 0),
-      badgeColor: 'bg-green-100 text-green-600',
+      badgeColor: "bg-green-100 text-green-600",
     },
-  ];
+  ]
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -108,33 +116,55 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
               </div>
               <nav className="hidden md:flex space-x-6">
                 <Link href="/">
-                  <a className={`font-medium pb-2 ${
-                    location === '/' 
-                      ? 'text-primary border-b-2 border-primary' 
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}>
+                  <a
+                    className={`font-medium pb-2 ${
+                      location === "/" ? "text-primary border-b-2 border-primary" : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
                     Dashboard
                   </a>
                 </Link>
 
-                {user?.role === 'super_admin' && (
+                <Link href="/job-preparation">
+                  <a
+                    className={`font-medium pb-2 flex items-center ${
+                      location === "/job-preparation"
+                        ? "text-primary border-b-2 border-primary"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    <Wrench className="h-4 w-4 mr-2" />
+                    Job Prep
+                  </a>
+                </Link>
+
+                {user?.role === "super_admin" && (
                   <Link href="/users">
-                    <a className={`font-medium pb-2 ${
-                      location === '/users' 
-                        ? 'text-primary border-b-2 border-primary' 
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}>
+                    <a
+                      className={`font-medium pb-2 ${
+                        location === "/users"
+                          ? "text-primary border-b-2 border-primary"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
                       User Management
                     </a>
                   </Link>
                 )}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className={`font-medium pb-2 h-auto p-0 ${
-                      location.startsWith('/supplies') || location.startsWith('/purchase-orders') || location.startsWith('/checkout-order') || location.startsWith('/supply-locations') || location.startsWith('/inventory-movements')
-                        ? 'text-primary border-b-2 border-primary' 
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}>
+                    <Button
+                      variant="ghost"
+                      className={`font-medium pb-2 h-auto p-0 ${
+                        location.startsWith("/supplies") ||
+                        location.startsWith("/purchase-orders") ||
+                        location.startsWith("/checkout-order") ||
+                        location.startsWith("/supply-locations") ||
+                        location.startsWith("/inventory-movements")
+                          ? "text-primary border-b-2 border-primary"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
                       <Package className="h-4 w-4 mr-2" />
                       <span>Inventory</span>
                       <ChevronDown className="h-4 w-4 ml-1" />
@@ -165,16 +195,17 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
                       <Package className="h-4 w-4 mr-2" />
                       Inventory Movements
                     </DropdownMenuItem>
-                    
                   </DropdownMenuContent>
                 </DropdownMenu>
 
                 <Link href="/email">
-                  <a className={`font-medium pb-2 flex items-center ${
-                    location === '/email'
-                      ? 'text-primary border-b-2 border-primary'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}>
+                  <a
+                    className={`font-medium pb-2 flex items-center ${
+                      location === "/email"
+                        ? "text-primary border-b-2 border-primary"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
                     <Mail className="h-4 w-4 mr-2" />
                     Email
                   </a>
@@ -186,27 +217,22 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
                 <div className="text-lg">👤</div>
                 <span>{user?.username}</span>
                 <Badge variant="secondary" className="text-xs">
-                  {user?.role?.replace('_', ' ')}
+                  {user?.role?.replace("_", " ")}
                 </Badge>
               </div>
               <div className="text-sm text-gray-500 flex items-center space-x-1">
                 <Clock className="h-4 w-4" />
                 <span>{formatTime(currentTime)}</span>
               </div>
-              <Button 
-                variant="ghost" 
+              <Button
+                variant="ghost"
                 size="sm"
                 onClick={() => logoutMutation.mutate()}
                 disabled={logoutMutation.isPending}
               >
                 <LogOut className="h-4 w-4" />
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="md:hidden"
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-              >
+              <Button variant="ghost" size="sm" className="md:hidden" onClick={() => setSidebarOpen(!sidebarOpen)}>
                 {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
               </Button>
             </div>
@@ -216,18 +242,18 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
 
       <div className="flex h-[calc(100vh-80px)]">
         {/* Sidebar */}
-        <aside className={`w-64 bg-white shadow-sm border-r border-gray-200 ${
-          sidebarOpen ? 'block' : 'hidden'
-        } md:block`}>
+        <aside
+          className={`w-64 bg-white shadow-sm border-r border-gray-200 ${sidebarOpen ? "block" : "hidden"} md:block`}
+        >
           <div className="p-6">
             {/* Quick Actions */}
             <div className="mb-6">
-              <Button 
+              <Button
                 className="w-full"
                 onClick={() => {
                   // This will be handled by the dashboard component
-                  const event = new CustomEvent('openJobModal');
-                  window.dispatchEvent(event);
+                  const event = new CustomEvent("openJobModal")
+                  window.dispatchEvent(event)
                 }}
               >
                 <Plus className="h-4 w-4 mr-2" />
@@ -244,17 +270,15 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
                     key={status.key}
                     className="flex items-center justify-between p-2 rounded hover:bg-gray-50 cursor-pointer"
                     onClick={() => {
-                      const event = new CustomEvent('filterByStatus', { detail: status.key });
-                      window.dispatchEvent(event);
+                      const event = new CustomEvent("filterByStatus", { detail: status.key })
+                      window.dispatchEvent(event)
                     }}
                   >
                     <div className="flex items-center space-x-2">
                       <div className={`w-3 h-3 ${status.color} rounded-full`} />
                       <span className="text-sm text-gray-700">{status.label}</span>
                     </div>
-                    <Badge className={`text-xs ${status.badgeColor}`}>
-                      {status.count}
-                    </Badge>
+                    <Badge className={`text-xs ${status.badgeColor}`}>{status.count}</Badge>
                   </div>
                 ))}
               </div>
@@ -274,10 +298,8 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-auto">
-          {children}
-        </main>
+        <main className="flex-1 overflow-auto">{children}</main>
       </div>
     </div>
-  );
+  )
 }

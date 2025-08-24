@@ -1,8 +1,8 @@
-import { 
+import {
   users, jobs, cutlists, jobMaterials, colors, colorGroups, jobTimeLogs, recutEntries, sheetCutLogs,
   locations, supplies, supplyVendors, supplyLocations, supplyTransactions, vendors, purchaseOrders, purchaseOrderItems,
   locationCategories, inventoryMovements, vendorContacts, inventoryAlerts,
-  type User, type InsertUser, type Job, type JobWithMaterials, 
+  type User, type InsertUser, type Job, type JobWithMaterials,
   type Color, type ColorGroup, type InsertColor, type InsertColorGroup,
   type JobMaterial, type InsertJobMaterial, type CreateJob,
   type ColorWithGroup, type JobTimeLog, type Cutlist, type InsertCutlist,
@@ -49,12 +49,12 @@ export interface IStorage {
   addMaterialToJob(jobId: number, colorId: number, totalSheets: number): Promise<void>;
   deleteMaterial(materialId: number): Promise<void>;
   deleteRecutEntry(recutId: number): Promise<void>;
-  
+
   // Recut management
   addRecutEntry(materialId: number, quantity: number, reason?: string, userId?: number): Promise<void>;
   getRecutEntries(materialId: number): Promise<any[]>;
   updateRecutSheetStatus(recutId: number, sheetIndex: number, status: string, userId?: number): Promise<void>;
-  
+
   // Sheet cutting tracking
   logSheetCut(materialId: number, sheetIndex: number, status: string, isRecut?: boolean, recutId?: number, userId?: number): Promise<void>;
   getSheetCutLogs(materialId: number, fromDate?: Date, toDate?: Date): Promise<any[]>;
@@ -101,18 +101,18 @@ export interface IStorage {
   checkOutInventory(supplyId: number, locationId: number, quantity: number, referenceType?: string, referenceId?: number, notes?: string, userId?: number): Promise<void>;
   transferInventory(supplyId: number, fromLocationId: number, toLocationId: number, quantity: number, notes?: string, userId?: number): Promise<void>;
   adjustInventory(supplyId: number, locationId: number, quantity: number, notes?: string, userId?: number): Promise<void>;
-  
+
   // Inventory movements
   getInventoryMovements(supplyId?: number, locationId?: number, fromDate?: Date, toDate?: Date): Promise<any[]>;
   getInventoryMovement(id: number): Promise<any>;
-  
+
   // Reorder management
   getNeedToPurchase(): Promise<any[]>;
   getReorderSuggestions(): Promise<any[]>;
   updateReorderPoint(supplyLocationId: number, reorderPoint: number): Promise<void>;
   getInventoryAlerts(): Promise<any[]>;
   resolveInventoryAlert(alertId: number): Promise<void>;
-  
+
   // Location categories
   getAllLocationCategories(): Promise<any[]>;
   createLocationCategory(category: any): Promise<any>;
@@ -144,36 +144,36 @@ export class DatabaseStorage implements IStorage {
     let completedSheets = 0;
     let skippedSheets = 0;
     let hasAnyActivity = false; // Track if any sheets have been marked (cut or skipped)
-    
+
     // Count original material sheets
     for (const cutlist of job.cutlists || []) {
       for (const material of cutlist.materials || []) {
         const sheetStatuses = material.sheetStatuses || [];
         const cutCount = sheetStatuses.filter(status => status === 'cut').length;
         const skipCount = sheetStatuses.filter(status => status === 'skip').length;
-        
+
         totalSheets += material.totalSheets;
         completedSheets += cutCount;
         skippedSheets += skipCount;
-        
+
         // Check if any sheets have been marked (cut or skipped)
         if (cutCount > 0 || skipCount > 0) {
           hasAnyActivity = true;
         }
-        
+
         // Get recut entries for this material
         const materialRecutEntries = await db.select().from(recutEntries).where(eq(recutEntries.materialId, material.id));
-        
+
         // Add recut sheets
         for (const recut of materialRecutEntries) {
           const recutStatuses = recut.sheetStatuses || [];
           const recutCutCount = recutStatuses.filter((s: string) => s === 'cut').length;
           const recutSkipCount = recutStatuses.filter((s: string) => s === 'skip').length;
-          
+
           totalSheets += recut.quantity;
           completedSheets += recutCutCount;
           skippedSheets += recutSkipCount;
-          
+
           // Check if any recut sheets have been marked
           if (recutCutCount > 0 || recutSkipCount > 0) {
             hasAnyActivity = true;
@@ -181,10 +181,10 @@ export class DatabaseStorage implements IStorage {
         }
       }
     }
-    
+
     // Calculate effective total (excluding skipped sheets)
     const effectiveTotalSheets = totalSheets - skippedSheets;
-    
+
     // Determine status based on activity and completion
     if (!hasAnyActivity) {
       return 'waiting'; // No sheets have been marked at all
@@ -244,7 +244,7 @@ export class DatabaseStorage implements IStorage {
 
   async createJob(jobData: CreateJob): Promise<JobWithMaterials> {
     const jobNumber = `JOB-${Date.now()}`;
-    
+
     const [job] = await db.insert(jobs).values({
       jobNumber,
       customerName: jobData.customerName,
@@ -341,7 +341,7 @@ export class DatabaseStorage implements IStorage {
       materials: allMaterials, // For backward compatibility
       jobTimeLogs: timeLogs, // Use correct property name for timer logs
     } as unknown as JobWithMaterials;
-    
+
     // Only auto-update status if job is not manually paused
     if (job.status !== 'paused') {
       const calculatedStatus = await this.calculateJobStatus(jobWithMaterials);
@@ -356,7 +356,7 @@ export class DatabaseStorage implements IStorage {
 
   async getAllJobs(search?: string, status?: string): Promise<JobWithMaterials[]> {
     let whereConditions = [];
-    
+
     if (search) {
       whereConditions.push(
         or(
@@ -366,7 +366,7 @@ export class DatabaseStorage implements IStorage {
         )
       );
     }
-    
+
     if (status && status !== 'all') {
       whereConditions.push(eq(jobs.status, status));
     }
@@ -386,7 +386,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateJobStatus(id: number, status: string): Promise<void> {
-    await db.update(jobs).set({ 
+    await db.update(jobs).set({
       status,
       updatedAt: new Date()
     }).where(eq(jobs.id, id));
@@ -400,14 +400,14 @@ export class DatabaseStorage implements IStorage {
         sql`${jobTimeLogs.endTime} IS NULL`
       )
     );
-    
+
     // If there's already an active timer, don't start another one
     if (existingActiveLog.length > 0) {
       return;
     }
-    
+
     const now = new Date();
-    
+
     // Create time log entry
     await db.insert(jobTimeLogs).values({
       jobId,
@@ -418,7 +418,7 @@ export class DatabaseStorage implements IStorage {
 
   async stopJobTimer(jobId: number): Promise<void> {
     const now = new Date();
-    
+
     // Close any open time logs for this job
     const result = await db.update(jobTimeLogs).set({
       endTime: now
@@ -428,7 +428,7 @@ export class DatabaseStorage implements IStorage {
         sql`${jobTimeLogs.endTime} IS NULL`
       )
     );
-    
+
     // Calculate total duration if we closed a time log
     const timeLogs = await db.select().from(jobTimeLogs).where(eq(jobTimeLogs.jobId, jobId));
     const totalDuration = timeLogs.reduce((total, log) => {
@@ -447,7 +447,7 @@ export class DatabaseStorage implements IStorage {
 
   async startJob(id: number, userId: number): Promise<void> {
     const now = new Date();
-    
+
     // Update job status and start time
     await db.update(jobs).set({
       status: 'in_progress',
@@ -465,7 +465,7 @@ export class DatabaseStorage implements IStorage {
 
   async pauseJob(id: number): Promise<void> {
     const now = new Date();
-    
+
     // Update job status
     await db.update(jobs).set({
       status: 'paused',
@@ -485,14 +485,14 @@ export class DatabaseStorage implements IStorage {
 
   async resumeJob(id: number): Promise<void> {
     const now = new Date();
-    
+
     // Get the job to determine correct status
     const job = await this.getJob(id);
     if (!job) return;
-    
+
     // Calculate what the status should be based on completion
     const correctStatus = await this.calculateJobStatus(job);
-    
+
     // Update job status to calculated status (not hardcoded in_progress)
     await db.update(jobs).set({
       status: correctStatus,
@@ -506,13 +506,13 @@ export class DatabaseStorage implements IStorage {
         startTime: now
       });
     }
-    
+
     console.log('Job resumed - status set to:', correctStatus);
   }
 
   async completeJob(id: number): Promise<void> {
     const now = new Date();
-    
+
     // Close current time log
     await db.update(jobTimeLogs).set({
       endTime: now
@@ -551,7 +551,7 @@ export class DatabaseStorage implements IStorage {
   async createCutlists(jobId: number, count: number): Promise<Cutlist[]> {
     const existingCutlists = await db.select().from(cutlists).where(eq(cutlists.jobId, jobId));
     const nextIndex = existingCutlists.length + 1;
-    
+
     const newCutlists = [];
     for (let i = 0; i < count; i++) {
       const [cutlist] = await db.insert(cutlists).values({
@@ -561,7 +561,7 @@ export class DatabaseStorage implements IStorage {
       }).returning();
       newCutlists.push(cutlist);
     }
-    
+
     return newCutlists;
   }
 
@@ -618,7 +618,7 @@ export class DatabaseStorage implements IStorage {
 
     // Get current sheet statuses
     let sheetStatuses = material.sheetStatuses || [];
-    
+
     // Add new pending sheets to the status array
     for (let i = 0; i < additionalSheets; i++) {
       sheetStatuses.push('pending');
@@ -640,7 +640,7 @@ export class DatabaseStorage implements IStorage {
 
     // Use the first cutlist, or create one if none exists
     let cutlistId = job.cutlists?.[0]?.id;
-    
+
     if (!cutlistId) {
       // Create a default cutlist for the job
       const [cutlist] = await db.insert(cutlists).values({
@@ -666,7 +666,7 @@ export class DatabaseStorage implements IStorage {
   async deleteMaterial(materialId: number): Promise<void> {
     // First delete all recut entries for this material
     await db.delete(recutEntries).where(eq(recutEntries.materialId, materialId));
-    
+
     // Then delete the material itself
     await db.delete(jobMaterials).where(eq(jobMaterials.id, materialId));
   }
@@ -684,25 +684,25 @@ export class DatabaseStorage implements IStorage {
 
       // Initialize arrays
       let sheetStatuses = material.sheetStatuses || [];
-      
+
       // Ensure the array is large enough for the target index
       while (sheetStatuses.length <= sheetIndex) {
         sheetStatuses.push('pending');
       }
-      
+
       // Only update if the status is actually different to prevent unnecessary updates
       if (sheetStatuses[sheetIndex] === status) {
         return; // No change needed
       }
-      
+
       // Update the sheet status
       sheetStatuses[sheetIndex] = status;
-      
+
       // Calculate completed sheets based on 'cut' status only
       const completedSheets = sheetStatuses.filter(s => s === 'cut').length;
-      
+
       console.log(`Updating material ${materialId}, sheet ${sheetIndex}: ${status}, completed: ${completedSheets}/${sheetStatuses.length}`);
-      
+
       // Update database with new statuses
       await tx.update(jobMaterials).set({
         sheetStatuses,
@@ -724,7 +724,7 @@ export class DatabaseStorage implements IStorage {
       }).from(jobMaterials)
       .innerJoin(cutlists, eq(jobMaterials.cutlistId, cutlists.id))
       .where(eq(jobMaterials.id, materialId));
-      
+
       if (cutlistData.length > 0) {
         const jobId = cutlistData[0].jobId;
         const job = await this.getJob(jobId);
@@ -746,15 +746,15 @@ export class DatabaseStorage implements IStorage {
 
     // Get current sheet statuses
     let sheetStatuses = material.sheetStatuses || [];
-    
+
     // Remove the sheet at the specified index
     if (sheetIndex >= 0 && sheetIndex < sheetStatuses.length) {
       sheetStatuses.splice(sheetIndex, 1);
     }
-    
+
     // Recalculate completed sheets
     const completedSheets = sheetStatuses.filter(s => s === 'cut').length;
-    
+
     // Update the material with new total sheets and statuses
     await db.update(jobMaterials).set({
       totalSheets: material.totalSheets - 1,
@@ -766,7 +766,7 @@ export class DatabaseStorage implements IStorage {
   async addRecutEntry(materialId: number, quantity: number, reason?: string, userId?: number): Promise<void> {
     // Initialize sheet statuses as all pending
     const sheetStatuses = Array(quantity).fill('pending');
-    
+
     await db.insert(recutEntries).values({
       materialId,
       quantity,
@@ -794,7 +794,7 @@ export class DatabaseStorage implements IStorage {
     .leftJoin(users, eq(recutEntries.userId, users.id))
     .where(eq(recutEntries.materialId, materialId))
     .orderBy(desc(recutEntries.createdAt));
-    
+
     return entries;
   }
 
@@ -805,18 +805,18 @@ export class DatabaseStorage implements IStorage {
 
     // Get current sheet statuses
     let sheetStatuses = recutEntry.sheetStatuses || [];
-    
+
     // Ensure array is long enough
     while (sheetStatuses.length <= sheetIndex) {
       sheetStatuses.push('pending');
     }
-    
+
     // Update the status
     sheetStatuses[sheetIndex] = status;
-    
+
     // Recalculate completed sheets
     const completedSheets = sheetStatuses.filter(s => s === 'cut').length;
-    
+
     // Update the recut entry
     await db.update(recutEntries).set({
       sheetStatuses,
@@ -840,7 +840,7 @@ export class DatabaseStorage implements IStorage {
     .innerJoin(jobMaterials, eq(recutEntries.materialId, jobMaterials.id))
     .innerJoin(cutlists, eq(jobMaterials.cutlistId, cutlists.id))
     .where(eq(recutEntries.id, recutId));
-    
+
     if (jobData.length > 0) {
       const jobId = jobData[0].jobId;
       const job = await this.getJob(jobId);
@@ -867,14 +867,14 @@ export class DatabaseStorage implements IStorage {
 
   async getSheetCutLogs(materialId: number, fromDate?: Date, toDate?: Date): Promise<any[]> {
     const conditions = [eq(sheetCutLogs.materialId, materialId)];
-    
+
     if (fromDate) {
       conditions.push(gte(sheetCutLogs.cutAt, fromDate));
     }
     if (toDate) {
       conditions.push(lte(sheetCutLogs.cutAt, toDate));
     }
-    
+
     return await db.select().from(sheetCutLogs)
       .where(and(...conditions))
       .orderBy(sheetCutLogs.cutAt);
@@ -882,31 +882,31 @@ export class DatabaseStorage implements IStorage {
 
   async deleteJob(jobId: number): Promise<void> {
     // Delete in proper order due to foreign key constraints
-    
+
     // First delete recut entries
     await db.delete(recutEntries).where(
-      inArray(recutEntries.materialId, 
+      inArray(recutEntries.materialId,
         db.select({ id: jobMaterials.id }).from(jobMaterials).where(
-          inArray(jobMaterials.cutlistId, 
+          inArray(jobMaterials.cutlistId,
             db.select({ id: cutlists.id }).from(cutlists).where(eq(cutlists.jobId, jobId))
           )
         )
       )
     );
-    
+
     // Then delete job materials (which cascade from cutlists)
     await db.delete(jobMaterials).where(
-      inArray(jobMaterials.cutlistId, 
+      inArray(jobMaterials.cutlistId,
         db.select({ id: cutlists.id }).from(cutlists).where(eq(cutlists.jobId, jobId))
       )
     );
-    
+
     // Delete cutlists
     await db.delete(cutlists).where(eq(cutlists.jobId, jobId));
-    
+
     // Delete job time logs
     await db.delete(jobTimeLogs).where(eq(jobTimeLogs.jobId, jobId));
-    
+
     // Finally delete the job
     await db.delete(jobs).where(eq(jobs.id, jobId));
   }
@@ -998,7 +998,7 @@ export class DatabaseStorage implements IStorage {
       const toRaw = sheetsTo ? new Date(sheetsTo) : new Date();
       const sheetsFromDate = new Date(Date.UTC(fromRaw.getUTCFullYear(), fromRaw.getUTCMonth(), fromRaw.getUTCDate(), 0, 0, 0, 0));
       const sheetsToDate = new Date(Date.UTC(toRaw.getUTCFullYear(), toRaw.getUTCMonth(), toRaw.getUTCDate(), 23, 59, 59, 999));
-      
+
       // Add debug logging
       console.log('Sheets filtering:', {
         sheetsFrom: sheetsFromDate.toISOString(),
@@ -1006,7 +1006,7 @@ export class DatabaseStorage implements IStorage {
         sheetsFromStr: sheetsFrom,
         sheetsToStr: sheetsTo
       });
-      
+
       // Count regular sheets cut in the date range
       sheetsCutResult = await db.select({
         totalSheets: sql<number>`count(*)`
@@ -1070,7 +1070,7 @@ export class DatabaseStorage implements IStorage {
       const timeToRaw = timeTo ? new Date(timeTo) : new Date();
       const timeFromDate = new Date(Date.UTC(timeFromRaw.getUTCFullYear(), timeFromRaw.getUTCMonth(), timeFromRaw.getUTCDate(), 0, 0, 0, 0));
       const timeToDate = new Date(Date.UTC(timeToRaw.getUTCFullYear(), timeToRaw.getUTCMonth(), timeToRaw.getUTCDate(), 23, 59, 59, 999));
-      
+
       // Add debug logging
       console.log('Time filtering:', {
         timeFrom: timeFromDate.toISOString(),
@@ -1078,7 +1078,7 @@ export class DatabaseStorage implements IStorage {
         timeFromStr: timeFrom,
         timeToStr: timeTo
       });
-      
+
       // Compute average job time based on time logs overlapping the range
       const logsInRange = await db.select({
         jobId: jobTimeLogs.jobId,
@@ -1178,7 +1178,7 @@ export class DatabaseStorage implements IStorage {
     const materialsTotal = Number(sheetsCutResult[0]?.totalSheets) || 0;
     const recutsTotal = Number(recutSheetsCutResult[0]?.totalRecutSheets) || 0;
     const totalSheetsCut = materialsTotal + recutsTotal;
-    
+
     // Debug logging
     console.log('Dashboard stats calculation:', {
       materialsTotal,
@@ -1303,15 +1303,15 @@ export class DatabaseStorage implements IStorage {
   async createSupply(supplyData: any): Promise<Supply> {
     try {
       console.log('Creating supply with data:', supplyData);
-      
+
       // Extract basic supply data
       const { vendors, locations, ...basicSupplyData } = supplyData;
-      
+
       // Insert the basic supply data
       const [supply] = await db.insert(supplies).values(basicSupplyData).returning();
-      
+
       console.log('Created supply with ID:', supply.id);
-      
+
       // Insert vendor relationships if provided
       if (vendors && vendors.length > 0) {
         const vendorRelations = vendors.map((vendor: any) => ({
@@ -1321,11 +1321,11 @@ export class DatabaseStorage implements IStorage {
           price: vendor.price,
           isPreferred: vendor.isPreferred
         }));
-        
+
         await db.insert(supplyVendors).values(vendorRelations);
         console.log('Created vendor relationships:', vendorRelations.length);
       }
-      
+
       // Insert location relationships if provided
       if (locations && locations.length > 0) {
         const locationRelations = locations.map((location: any) => ({
@@ -1337,7 +1337,7 @@ export class DatabaseStorage implements IStorage {
           // Ensure availableQuantity reflects onHand - allocated (allocated defaults to 0)
           availableQuantity: (location.onHandQuantity || 0)
         }));
-        
+
         await db.insert(supplyLocations).values(locationRelations);
         console.log('Created location relationships:', locationRelations.length);
         // Defensive: recalc available = onHand - allocated for this supply
@@ -1345,7 +1345,7 @@ export class DatabaseStorage implements IStorage {
           .set({ availableQuantity: sql`${supplyLocations.onHandQuantity} - ${supplyLocations.allocatedQuantity}` })
           .where(eq(supplyLocations.supplyId, supply.id));
       }
-      
+
       return supply;
     } catch (error) {
       console.error('Error creating supply:', error);
@@ -1357,23 +1357,23 @@ export class DatabaseStorage implements IStorage {
     try {
       console.log('Updating supply with data:', supplyData);
       console.log('Supply ID to update:', id);
-      
+
       // Extract basic supply data
       const { vendors, locations, ...basicSupplyData } = supplyData;
       console.log('Basic supply data:', basicSupplyData);
       console.log('Vendors data:', vendors);
       console.log('Locations data:', locations);
-      
+
       // Update the basic supply data
       console.log('Updating basic supply data...');
       await db.update(supplies).set(basicSupplyData).where(eq(supplies.id, id));
       console.log('Basic supply data updated successfully');
-      
+
       // Delete existing vendor relationships
       console.log('Deleting existing vendor relationships...');
       await db.delete(supplyVendors).where(eq(supplyVendors.supplyId, id));
       console.log('Existing vendor relationships deleted');
-      
+
       // Insert new vendor relationships if provided
       if (vendors && vendors.length > 0) {
         console.log('Inserting new vendor relationships...');
@@ -1384,18 +1384,18 @@ export class DatabaseStorage implements IStorage {
           price: vendor.price,
           isPreferred: vendor.isPreferred
         }));
-        
+
         await db.insert(supplyVendors).values(vendorRelations);
         console.log('Updated vendor relationships:', vendorRelations.length);
       } else {
         console.log('No vendor relationships to insert');
       }
-      
+
       // Delete existing location relationships
       console.log('Deleting existing location relationships...');
       await db.delete(supplyLocations).where(eq(supplyLocations.supplyId, id));
       console.log('Existing location relationships deleted');
-      
+
       // Insert new location relationships if provided
       if (locations && locations.length > 0) {
         console.log('Inserting new location relationships...');
@@ -1407,7 +1407,7 @@ export class DatabaseStorage implements IStorage {
           orderGroupSize: location.orderGroupSize || 1,
           availableQuantity: (location.onHandQuantity || 0)
         }));
-        
+
         await db.insert(supplyLocations).values(locationRelations);
         console.log('Updated location relationships:', locationRelations.length);
         // Defensive: recalc available = onHand - allocated for this supply
@@ -1417,7 +1417,7 @@ export class DatabaseStorage implements IStorage {
       } else {
         console.log('No location relationships to insert');
       }
-      
+
       console.log('Supply update completed successfully');
     } catch (error) {
       console.error('Error updating supply:', error);
@@ -1764,11 +1764,11 @@ export class DatabaseStorage implements IStorage {
   // Purchase order management methods
   async getAllPurchaseOrders(fromDate?: string, toDate?: string): Promise<PurchaseOrderWithItems[]> {
     let conditions = [];
-    
+
     if (fromDate || toDate) {
       const fromDateObj = fromDate ? new Date(fromDate) : new Date(0);
       const toDateObj = toDate ? new Date(toDate) : new Date(Date.now());
-      
+
       conditions.push(
         gte(purchaseOrders.dateOrdered, fromDateObj),
         lte(purchaseOrders.dateOrdered, toDateObj)
@@ -1813,7 +1813,7 @@ export class DatabaseStorage implements IStorage {
               contact_info: vendorRow.contactInfo,
               createdAt: vendorRow.createdAt,
             };
-            
+
             return {
               ...item,
               supply: supply[0] || null,
@@ -1843,9 +1843,9 @@ export class DatabaseStorage implements IStorage {
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
     const existingPOs = await db.select().from(purchaseOrders)
       .where(sql`${purchaseOrders.poNumber} LIKE ${`PO-${dateStr}-%`}`);
-    
+
     const poNumber = `PO-${dateStr}-${String(existingPOs.length + 1).padStart(3, '0')}`;
-    
+
     // Calculate total amount
     const totalAmount = orderItems.reduce((sum, item) => sum + (item.orderQuantity * item.pricePerUnit), 0);
 
@@ -1858,7 +1858,7 @@ export class DatabaseStorage implements IStorage {
 
     // Create purchase order items
     const purchaseOrderItemsResult = await Promise.all(
-      orderItems.map(item => 
+      orderItems.map(item =>
         db.insert(purchaseOrderItems).values({
           ...item,
           purchaseOrderId: purchaseOrder.id,
@@ -1898,7 +1898,7 @@ export class DatabaseStorage implements IStorage {
           contact_info: vendorRow.contactInfo,
           createdAt: vendorRow.createdAt,
         };
-        
+
         return {
           ...item,
           supply: supply[0] || null,
@@ -1920,8 +1920,8 @@ export class DatabaseStorage implements IStorage {
 
   async updatePurchaseOrderReceived(id: number, dateReceived: Date): Promise<void> {
     await db.update(purchaseOrders)
-      .set({ 
-        dateReceived, 
+      .set({
+        dateReceived,
         status: 'received',
         updatedAt: new Date()
       })

@@ -5,7 +5,7 @@
 ### Option 1: Free PostgreSQL Database (Recommended)
 
 1. **Get a free database:**
-   - Go to [ElephantSQL](https://www.elephantsql.com/)
+   - Go to [ElephantSQL](https://www   .elephantsql.com/)
    - Sign up for a free account
    - Create a new instance (Tiny Turtle - Free)
    - Copy the connection URL
@@ -48,10 +48,10 @@
 
 ## 🎯 What This Will Do
 
-✅ Create all necessary database tables  
-✅ Set up user authentication  
-✅ Enable job management features  
-✅ Allow you to create your first admin account  
+✅ Create all necessary database tables
+✅ Set up user authentication
+✅ Enable job management features
+✅ Allow you to create your first admin account
 
 ## 🚨 Troubleshooting
 
@@ -59,4 +59,4 @@ If you get connection errors:
 - Make sure your DATABASE_URL is correct
 - Check that the database is accessible
 - Verify SSL settings are correct
-- Try running `node test-db-connection.js` to test the connection 
+- Try running `node test-db-connection.js` to test the connection
