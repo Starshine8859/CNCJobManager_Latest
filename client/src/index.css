@@ -55,7 +55,7 @@ body {
   --destructive-foreground: hsl(60, 9.1%, 97.8%);
   --ring: hsl(20, 14.3%, 4.1%);
   --radius: 0.5rem;
-  
+
   /* Custom colors matching the design */
   --success: hsl(120, 60%, 50%);
   --warning: hsl(35, 100%, 50%);
@@ -83,7 +83,7 @@ body {
   --destructive-foreground: hsl(0, 0%, 98%);
   --ring: hsl(240, 4.9%, 83.9%);
   --radius: 0.5rem;
-  
+
   /* Custom colors for dark mode */
   --success: hsl(120, 50%, 40%);
   --warning: hsl(35, 80%, 40%);
@@ -104,23 +104,23 @@ body {
   .text-success {
     color: var(--success);
   }
-  
+
   .text-warning {
     color: var(--warning);
   }
-  
+
   .text-error {
     color: var(--error);
   }
-  
+
   .bg-success {
     background-color: var(--success);
   }
-  
+
   .bg-warning {
     background-color: var(--warning);
   }
-  
+
   .bg-error {
     background-color: var(--error);
   }
