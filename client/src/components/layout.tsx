@@ -117,7 +117,7 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
               <nav className="hidden md:flex space-x-6">
                 <Link href="/">
                   <a
-                    className={`font-medium pb-2 ${
+                    className={`font-medium pb-2 font-sans ${
                       location === "/" ? "text-primary border-b-2 border-primary" : "text-gray-500 hover:text-gray-700"
                     }`}
                   >
@@ -127,7 +127,7 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
 
                 <Link href="/job-preparation">
                   <a
-                    className={`font-medium pb-2 flex items-center ${
+                    className={`font-medium pb-2 flex items-center font-sans ${
                       location === "/job-preparation"
                         ? "text-primary border-b-2 border-primary"
                         : "text-gray-500 hover:text-gray-700"
@@ -141,7 +141,7 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
                 {user?.role === "super_admin" && (
                   <Link href="/users">
                     <a
-                      className={`font-medium pb-2 ${
+                      className={`font-medium pb-2 font-sans ${
                         location === "/users"
                           ? "text-primary border-b-2 border-primary"
                           : "text-gray-500 hover:text-gray-700"
@@ -155,7 +155,7 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
-                      className={`font-medium pb-2 h-auto p-0 ${
+                      className={`font-medium pb-2 h-auto p-0 font-sans ${
                         location.startsWith("/supplies") ||
                         location.startsWith("/purchase-orders") ||
                         location.startsWith("/checkout-order") ||
@@ -200,7 +200,7 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
 
                 <Link href="/email">
                   <a
-                    className={`font-medium pb-2 flex items-center ${
+                    className={`font-medium pb-2 flex items-center font-sans ${
                       location === "/email"
                         ? "text-primary border-b-2 border-primary"
                         : "text-gray-500 hover:text-gray-700"
@@ -213,14 +213,14 @@ export default function Layout({ children, currentTime = new Date() }: LayoutPro
               </nav>
             </div>
             <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2 text-sm text-gray-600">
+              <div className="flex items-center space-x-2 text-sm text-gray-600 font-sans">
                 <div className="text-lg">👤</div>
                 <span>{user?.username}</span>
                 <Badge variant="secondary" className="text-xs">
                   {user?.role?.replace("_", " ")}
                 </Badge>
               </div>
-              <div className="text-sm text-gray-500 flex items-center space-x-1">
+              <div className="text-sm text-gray-500 flex items-center space-x-1 font-sans">
                 <Clock className="h-4 w-4" />
                 <span>{formatTime(currentTime)}</span>
               </div>
