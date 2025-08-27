@@ -34,6 +34,7 @@ import { db } from "./db"
 import { eq, and, or, lte, gte, desc, sql, inArray } from "drizzle-orm"
 import "./types"
 import partChecklistsRouter from "./routes/part-checklists"
+import { jobSheets, jobHardware, jobRods } from "@shared/schema"
 
 // File upload configuration
 const uploadDir = path.join(process.cwd(), "uploads")
@@ -2163,6 +2164,224 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Create location category error:", error)
       res.status(500).json({ message: "Failed to create location category" })
+    }
+  })
+
+  // Job Sheets endpoints
+  app.get("/api/jobs/:jobId/sheets", requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.jobId)
+      const sheets = await db.select().from(jobSheets).where(eq(jobSheets.jobId, jobId)).orderBy(jobSheets.createdAt)
+
+      res.json(sheets)
+    } catch (error) {
+      console.error("Get job sheets error:", error)
+      res.status(500).json({ message: "Failed to fetch job sheets" })
+    }
+  })
+
+  app.post("/api/jobs/:jobId/sheets", requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.jobId)
+      const { materialType, qty } = req.body
+
+      if (!materialType || !qty || qty < 1) {
+        return res.status(400).json({ message: "Material type and valid quantity required" })
+      }
+
+      const sheet = await db.insert(jobSheets).values({ jobId, materialType, qty }).returning()
+
+      broadcastToClients({ type: "job_sheet_added", data: sheet[0] })
+      res.json(sheet[0])
+    } catch (error) {
+      console.error("Add job sheet error:", error)
+      res.status(500).json({ message: "Failed to add job sheet" })
+    }
+  })
+
+  app.put("/api/jobs/:jobId/sheets/:id", requireAuth, async (req, res) => {
+    try {
+      const id = Number.parseInt(req.params.id)
+      const { materialType, qty } = req.body
+
+      const sheet = await db
+        .update(jobSheets)
+        .set({ materialType, qty, updatedAt: new Date() })
+        .where(eq(jobSheets.id, id))
+        .returning()
+
+      broadcastToClients({ type: "job_sheet_updated", data: sheet[0] })
+      res.json(sheet[0])
+    } catch (error) {
+      console.error("Update job sheet error:", error)
+      res.status(500).json({ message: "Failed to update job sheet" })
+    }
+  })
+
+  app.delete("/api/jobs/:jobId/sheets/:id", requireAuth, async (req, res) => {
+    try {
+      const id = Number.parseInt(req.params.id)
+
+      await db.delete(jobSheets).where(eq(jobSheets.id, id))
+
+      broadcastToClients({ type: "job_sheet_deleted", data: { id } })
+      res.json({ message: "Job sheet deleted successfully" })
+    } catch (error) {
+      console.error("Delete job sheet error:", error)
+      res.status(500).json({ message: "Failed to delete job sheet" })
+    }
+  })
+
+  // Job Hardware endpoints
+  app.get("/api/jobs/:jobId/hardware", requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.jobId)
+      const hardware = await db
+        .select()
+        .from(jobHardware)
+        .where(eq(jobHardware.jobId, jobId))
+        .orderBy(jobHardware.createdAt)
+
+      res.json(hardware)
+    } catch (error) {
+      console.error("Get job hardware error:", error)
+      res.status(500).json({ message: "Failed to fetch job hardware" })
+    }
+  })
+
+  app.post("/api/jobs/:jobId/hardware", requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.jobId)
+      const { hardwareName, qty, onHandQty, needed, used, stillRequired } = req.body
+
+      if (!hardwareName || !qty || qty < 0) {
+        return res.status(400).json({ message: "Hardware name and valid quantity required" })
+      }
+
+      const hardware = await db
+        .insert(jobHardware)
+        .values({
+          jobId,
+          hardwareName,
+          qty,
+          onHandQty: onHandQty || 0,
+          needed: needed || 0,
+          used: used || 0,
+          stillRequired: stillRequired || 0,
+        })
+        .returning()
+
+      broadcastToClients({ type: "job_hardware_added", data: hardware[0] })
+      res.json(hardware[0])
+    } catch (error) {
+      console.error("Add job hardware error:", error)
+      res.status(500).json({ message: "Failed to add job hardware" })
+    }
+  })
+
+  app.put("/api/jobs/:jobId/hardware/:id", requireAuth, async (req, res) => {
+    try {
+      const id = Number.parseInt(req.params.id)
+      const { hardwareName, qty, onHandQty, needed, used, stillRequired } = req.body
+
+      const hardware = await db
+        .update(jobHardware)
+        .set({
+          hardwareName,
+          qty,
+          onHandQty,
+          needed,
+          used,
+          stillRequired,
+          updatedAt: new Date(),
+        })
+        .where(eq(jobHardware.id, id))
+        .returning()
+
+      broadcastToClients({ type: "job_hardware_updated", data: hardware[0] })
+      res.json(hardware[0])
+    } catch (error) {
+      console.error("Update job hardware error:", error)
+      res.status(500).json({ message: "Failed to update job hardware" })
+    }
+  })
+
+  app.delete("/api/jobs/:jobId/hardware/:id", requireAuth, async (req, res) => {
+    try {
+      const id = Number.parseInt(req.params.id)
+
+      await db.delete(jobHardware).where(eq(jobHardware.id, id))
+
+      broadcastToClients({ type: "job_hardware_deleted", data: { id } })
+      res.json({ message: "Job hardware deleted successfully" })
+    } catch (error) {
+      console.error("Delete job hardware error:", error)
+      res.status(500).json({ message: "Failed to delete job hardware" })
+    }
+  })
+
+  // Job Rods endpoints
+  app.get("/api/jobs/:jobId/rods", requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.jobId)
+      const rods = await db.select().from(jobRods).where(eq(jobRods.jobId, jobId)).orderBy(jobRods.createdAt)
+
+      res.json(rods)
+    } catch (error) {
+      console.error("Get job rods error:", error)
+      res.status(500).json({ message: "Failed to fetch job rods" })
+    }
+  })
+
+  app.post("/api/jobs/:jobId/rods", requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.jobId)
+      const { rodName, lengthInches } = req.body
+
+      if (!rodName || !lengthInches) {
+        return res.status(400).json({ message: "Rod name and length in inches required" })
+      }
+
+      const rod = await db.insert(jobRods).values({ jobId, rodName, lengthInches }).returning()
+
+      broadcastToClients({ type: "job_rod_added", data: rod[0] })
+      res.json(rod[0])
+    } catch (error) {
+      console.error("Add job rod error:", error)
+      res.status(500).json({ message: "Failed to add job rod" })
+    }
+  })
+
+  app.put("/api/jobs/:jobId/rods/:id", requireAuth, async (req, res) => {
+    try {
+      const id = Number.parseInt(req.params.id)
+      const { rodName, lengthInches } = req.body
+
+      const rod = await db
+        .update(jobRods)
+        .set({ rodName, lengthInches, updatedAt: new Date() })
+        .where(eq(jobRods.id, id))
+        .returning()
+
+      broadcastToClients({ type: "job_rod_updated", data: rod[0] })
+      res.json(rod[0])
+    } catch (error) {
+      console.error("Update job rod error:", error)
+      res.status(500).json({ message: "Failed to update job rod" })
+    }
+  })
+
+  app.delete("/api/jobs/:jobId/rods/:id", requireAuth, async (req, res) => {
+    try {
+      const id = Number.parseInt(req.params.id)
+
+      await db.delete(jobRods).where(eq(jobRods.id, id))
+
+      broadcastToClients({ type: "job_rod_deleted", data: { id } })
+      res.json({ message: "Job rod deleted successfully" })
+    } catch (error) {
+      console.error("Delete job rod error:", error)
+      res.status(500).json({ message: "Failed to delete job rod" })
     }
   })
 

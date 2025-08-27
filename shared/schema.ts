@@ -376,12 +376,53 @@ export const gcodeFiles = pgTable("gcode_files", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
 
+// New job category tables
+export const jobRods = pgTable("job_rods", {
+  id: serial("id").primaryKey(),
+  jobId: integer("job_id")
+    .references(() => jobs.id)
+    .notNull(),
+  rodName: text("rod_name").notNull(),
+  lengthInches: text("length_inches").notNull(), // Format like "5 5/16"
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+})
+
+export const jobSheets = pgTable("job_sheets", {
+  id: serial("id").primaryKey(),
+  jobId: integer("job_id")
+    .references(() => jobs.id)
+    .notNull(),
+  materialType: text("material_type").notNull(),
+  qty: integer("qty").notNull().default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+})
+
+export const jobHardware = pgTable("job_hardware", {
+  id: serial("id").primaryKey(),
+  jobId: integer("job_id")
+    .references(() => jobs.id)
+    .notNull(),
+  hardwareName: text("hardware_name").notNull(),
+  qty: integer("qty").notNull().default(1),
+  onHandQty: integer("on_hand_qty").notNull().default(0),
+  needed: integer("needed").notNull().default(0),
+  used: integer("used").notNull().default(0),
+  stillRequired: integer("still_required").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+})
+
 // Relations
 export const jobsRelations = relations(jobs, ({ many }) => ({
   cutlists: many(cutlists),
   timeLogs: many(jobTimeLogs),
   partChecklists: many(partChecklists),
   gcodeFiles: many(gcodeFiles),
+  sheets: many(jobSheets),
+  hardware: many(jobHardware),
+  rods: many(jobRods),
 }))
 
 export const cutlistsRelations = relations(cutlists, ({ one, many }) => ({
@@ -485,6 +526,27 @@ export const gcodeFilesRelations = relations(gcodeFiles, ({ one }) => ({
   uploadedByUser: one(users, {
     fields: [gcodeFiles.uploadedBy],
     references: [users.id],
+  }),
+}))
+
+export const jobSheetsRelations = relations(jobSheets, ({ one }) => ({
+  job: one(jobs, {
+    fields: [jobSheets.jobId],
+    references: [jobs.id],
+  }),
+}))
+
+export const jobHardwareRelations = relations(jobHardware, ({ one }) => ({
+  job: one(jobs, {
+    fields: [jobHardware.jobId],
+    references: [jobs.id],
+  }),
+}))
+
+export const jobRodsRelations = relations(jobRods, ({ one }) => ({
+  job: one(jobs, {
+    fields: [jobRods.jobId],
+    references: [jobs.id],
   }),
 }))
 
@@ -708,6 +770,24 @@ export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderIte
   createdAt: true,
 })
 
+export const insertJobSheetSchema = createInsertSchema(jobSheets).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+})
+
+export const insertJobHardwareSchema = createInsertSchema(jobHardware).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+})
+
+export const insertJobRodSchema = createInsertSchema(jobRods).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+})
+
 export const createJobSchema = z.object({
   customerName: z.string().min(1, "Customer name is required"),
   jobName: z.string().min(1, "Job name is required"),
@@ -762,6 +842,9 @@ export type JobWithCutlists = Job & {
   timeLogs: JobTimeLog[]
   partChecklists: PartChecklist[]
   gcodeFiles: GcodeFile[]
+  sheets: JobSheet[]
+  hardware: JobHardware[]
+  rods: JobRod[]
 }
 
 // Keep backward compatibility - include timer logs
@@ -836,6 +919,13 @@ export type PartChecklistItem = typeof partChecklistItems.$inferSelect
 export type InsertPartChecklistItem = z.infer<typeof insertPartChecklistItemSchema>
 export type GcodeFile = typeof gcodeFiles.$inferSelect
 export type InsertGcodeFile = z.infer<typeof insertGcodeFileSchema>
+
+export type JobSheet = typeof jobSheets.$inferSelect
+export type InsertJobSheet = z.infer<typeof insertJobSheetSchema>
+export type JobHardware = typeof jobHardware.$inferSelect
+export type InsertJobHardware = z.infer<typeof insertJobHardwareSchema>
+export type JobRod = typeof jobRods.$inferSelect
+export type InsertJobRod = z.infer<typeof insertJobRodSchema>
 
 export type LocationWithCategory = Location & {
   category: LocationCategory | null
