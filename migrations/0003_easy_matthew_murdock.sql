@@ -1,1 +1,0 @@
-ALTER TABLE "job_hardware" DROP COLUMN "qty";
