@@ -2,6 +2,14 @@ import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizz
 import { relations } from "drizzle-orm"
 import { createInsertSchema } from "drizzle-zod"
 import { z } from "zod"
+import type {
+  CutlistWithMaterials,
+  JobTimeLogType,
+  GcodeFileType,
+  JobSheetType,
+  SupplyType,
+  JobRodType,
+} from "./types" // Assuming these types are declared in a separate file
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -11,7 +19,7 @@ export const users = pgTable("users", {
   role: text("role").notNull().default("user"), // user, admin, super_admin
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
-// Sessions table for authentication
+
 export const sessions = pgTable("sessions", {
   id: serial("id").primaryKey(),
   sessionId: text("session_id").notNull().unique(),
@@ -24,7 +32,6 @@ export const sessions = pgTable("sessions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
 
-// Location categories for better organization
 export const locationCategories = pgTable("location_categories", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
@@ -34,7 +41,6 @@ export const locationCategories = pgTable("location_categories", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
-// Enhanced locations with categories
 export const locations = pgTable("locations", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
@@ -44,7 +50,6 @@ export const locations = pgTable("locations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
-// Supplies table (replaces colors with inventory management)
 export const supplies = pgTable("supplies", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -60,7 +65,6 @@ export const supplies = pgTable("supplies", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
 
-// Supply-Vendor linking table (many-to-many)
 export const supplyVendors = pgTable("supply_vendors", {
   id: serial("id").primaryKey(),
   supplyId: integer("supply_id")
@@ -75,7 +79,6 @@ export const supplyVendors = pgTable("supply_vendors", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
-// Enhanced supply-location with reorder management
 export const supplyLocations = pgTable("supply_locations", {
   id: serial("id").primaryKey(),
   supplyId: integer("supply_id")
@@ -96,7 +99,6 @@ export const supplyLocations = pgTable("supply_locations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
-// Inventory movements (check-in/check-out)
 export const inventoryMovements = pgTable("inventory_movements", {
   id: serial("id").primaryKey(),
   supplyId: integer("supply_id")
@@ -113,7 +115,6 @@ export const inventoryMovements = pgTable("inventory_movements", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
-// Supply transactions for tracking usage
 export const supplyTransactions = pgTable("supply_transactions", {
   id: serial("id").primaryKey(),
   supplyId: integer("supply_id")
@@ -127,7 +128,6 @@ export const supplyTransactions = pgTable("supply_transactions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
-// Enhanced vendors with more details
 export const vendors = pgTable("vendors", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -145,7 +145,6 @@ export const vendors = pgTable("vendors", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
 
-// Vendor contacts
 export const vendorContacts = pgTable("vendor_contacts", {
   id: serial("id").primaryKey(),
   vendorId: integer("vendor_id")
@@ -159,7 +158,6 @@ export const vendorContacts = pgTable("vendor_contacts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
-// Inventory alerts and notifications
 export const inventoryAlerts = pgTable("inventory_alerts", {
   id: serial("id").primaryKey(),
   supplyId: integer("supply_id")
@@ -176,7 +174,6 @@ export const inventoryAlerts = pgTable("inventory_alerts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
-// Enhanced purchase orders with email integration
 export const purchaseOrders = pgTable("purchase_orders", {
   id: serial("id").primaryKey(),
   poNumber: text("po_number").notNull().unique(), // PO-YYYYMMDD-XXX
@@ -196,7 +193,6 @@ export const purchaseOrders = pgTable("purchase_orders", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
 
-// Enhanced purchase order items
 export const purchaseOrderItems = pgTable("purchase_order_items", {
   id: serial("id").primaryKey(),
   purchaseOrderId: integer("purchase_order_id")
@@ -220,10 +216,8 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
-// Emails storage for general email feature
 export const emails = pgTable("emails", {
   id: serial("id").primaryKey(),
-  // Folders: inbox, sent, drafts, scheduled, spam, trash
   folder: text("folder").notNull().default("sent"),
   from: text("from").notNull(),
   to: text("to").notNull(), // comma-separated list
@@ -231,14 +225,12 @@ export const emails = pgTable("emails", {
   bcc: text("bcc"),
   subject: text("subject"),
   body: text("body"),
-  // Status: draft, sent, scheduled
   status: text("status").default("sent"),
   scheduledAt: timestamp("scheduled_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
 
-// Legacy tables (will be migrated and eventually removed)
 export const colorGroups = pgTable("color_groups", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
@@ -313,7 +305,6 @@ export const recutEntries = pgTable("recut_entries", {
   userId: integer("user_id").references(() => users.id),
 })
 
-// Track sheet cutting activity with timestamps
 export const sheetCutLogs = pgTable("sheet_cut_logs", {
   id: serial("id").primaryKey(),
   materialId: integer("material_id")
@@ -328,7 +319,6 @@ export const sheetCutLogs = pgTable("sheet_cut_logs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
-// Part checklist tables for job preparation feature
 export const partChecklists = pgTable("part_checklists", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -357,7 +347,6 @@ export const partChecklistItems = pgTable("part_checklist_items", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
-// G-Code files table for future validation feature
 export const gcodeFiles = pgTable("gcode_files", {
   id: serial("id").primaryKey(),
   jobId: integer("job_id")
@@ -376,14 +365,17 @@ export const gcodeFiles = pgTable("gcode_files", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
 
-// New job category tables
 export const jobRods = pgTable("job_rods", {
   id: serial("id").primaryKey(),
   jobId: integer("job_id")
     .references(() => jobs.id)
     .notNull(),
+  supplyId: integer("supply_id").references(() => supplies.id),
   rodName: text("rod_name").notNull(),
   lengthInches: text("length_inches").notNull(), // Format like "5 5/16"
+  allocated: integer("allocated").default(0),
+  used: integer("used").default(0),
+  stillRequired: integer("still_required").default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
@@ -404,10 +396,12 @@ export const jobHardware = pgTable("job_hardware", {
   jobId: integer("job_id")
     .references(() => jobs.id)
     .notNull(),
-  hardwareName: text("hardware_name").notNull(),
-  qty: integer("qty").notNull().default(1),
-  onHandQty: integer("on_hand_qty").notNull().default(0),
-  needed: integer("needed").notNull().default(0),
+  supplyId: integer("supply_id")
+    .references(() => supplies.id)
+    .notNull(),
+  onHand: integer("on_hand").notNull().default(0),
+  available: integer("available").notNull().default(0),
+  allocated: integer("allocated").notNull().default(0), // Previously "needed"
   used: integer("used").notNull().default(0),
   stillRequired: integer("still_required").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -415,9 +409,173 @@ export const jobHardware = pgTable("job_hardware", {
 })
 
 // Relations
+export const usersRelations = relations(users, ({ many }) => ({
+  sessions: many(sessions),
+  jobTimeLogs: many(jobTimeLogs),
+  inventoryMovements: many(inventoryMovements),
+  supplyTransactions: many(supplyTransactions),
+  partChecklists: many(partChecklists),
+  gcodeFiles: many(gcodeFiles),
+  purchaseOrders: many(purchaseOrders),
+}))
+
+export const sessionsRelations = relations(sessions, ({ one }) => ({
+  user: one(users, {
+    fields: [sessions.userId],
+    references: [users.id],
+  }),
+}))
+
+export const locationCategoriesRelations = relations(locationCategories, ({ many }) => ({
+  locations: many(locations),
+}))
+
+export const locationsRelations = relations(locations, ({ one, many }) => ({
+  category: one(locationCategories, {
+    fields: [locations.categoryId],
+    references: [locationCategories.id],
+  }),
+  supplyLocations: many(supplyLocations),
+  inventoryMovements: many(inventoryMovements),
+  purchaseOrderItems: many(purchaseOrderItems),
+}))
+
+export const suppliesRelations = relations(supplies, ({ many }) => ({
+  supplyVendors: many(supplyVendors),
+  supplyLocations: many(supplyLocations),
+  inventoryMovements: many(inventoryMovements),
+  supplyTransactions: many(supplyTransactions),
+  jobMaterials: many(jobMaterials),
+  purchaseOrderItems: many(purchaseOrderItems),
+  jobHardware: many(jobHardware),
+}))
+
+export const supplyVendorsRelations = relations(supplyVendors, ({ one }) => ({
+  supply: one(supplies, {
+    fields: [supplyVendors.supplyId],
+    references: [supplies.id],
+  }),
+  vendor: one(vendors, {
+    fields: [supplyVendors.vendorId],
+    references: [vendors.id],
+  }),
+}))
+
+export const supplyLocationsRelations = relations(supplyLocations, ({ one }) => ({
+  supply: one(supplies, {
+    fields: [supplyLocations.supplyId],
+    references: [supplies.id],
+  }),
+  location: one(locations, {
+    fields: [supplyLocations.locationId],
+    references: [locations.id],
+  }),
+}))
+
+export const vendorsRelations = relations(vendors, ({ many }) => ({
+  supplyVendors: many(supplyVendors),
+  vendorContacts: many(vendorContacts),
+  purchaseOrderItems: many(purchaseOrderItems),
+}))
+
+export const vendorContactsRelations = relations(vendorContacts, ({ one }) => ({
+  vendor: one(vendors, {
+    fields: [vendorContacts.vendorId],
+    references: [vendors.id],
+  }),
+}))
+
+export const inventoryMovementsRelations = relations(inventoryMovements, ({ one }) => ({
+  supply: one(supplies, {
+    fields: [inventoryMovements.supplyId],
+    references: [supplies.id],
+  }),
+  fromLocation: one(locations, {
+    fields: [inventoryMovements.fromLocationId],
+    references: [locations.id],
+  }),
+  toLocation: one(locations, {
+    fields: [inventoryMovements.toLocationId],
+    references: [locations.id],
+  }),
+  user: one(users, {
+    fields: [inventoryMovements.userId],
+    references: [users.id],
+  }),
+}))
+
+export const supplyTransactionsRelations = relations(supplyTransactions, ({ one }) => ({
+  supply: one(supplies, {
+    fields: [supplyTransactions.supplyId],
+    references: [supplies.id],
+  }),
+  job: one(jobs, {
+    fields: [supplyTransactions.jobId],
+    references: [jobs.id],
+  }),
+  user: one(users, {
+    fields: [supplyTransactions.userId],
+    references: [users.id],
+  }),
+}))
+
+export const inventoryAlertsRelations = relations(inventoryAlerts, ({ one }) => ({
+  supply: one(supplies, {
+    fields: [inventoryAlerts.supplyId],
+    references: [supplies.id],
+  }),
+  location: one(locations, {
+    fields: [inventoryAlerts.locationId],
+    references: [locations.id],
+  }),
+  user: one(users, {
+    fields: [inventoryAlerts.userId],
+    references: [users.id],
+  }),
+}))
+
+export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many }) => ({
+  createdBy: one(users, {
+    fields: [purchaseOrders.createdBy],
+    references: [users.id],
+  }),
+  items: many(purchaseOrderItems),
+}))
+
+export const purchaseOrderItemsRelations = relations(purchaseOrderItems, ({ one }) => ({
+  purchaseOrder: one(purchaseOrders, {
+    fields: [purchaseOrderItems.purchaseOrderId],
+    references: [purchaseOrders.id],
+  }),
+  supply: one(supplies, {
+    fields: [purchaseOrderItems.supplyId],
+    references: [supplies.id],
+  }),
+  vendor: one(vendors, {
+    fields: [purchaseOrderItems.vendorId],
+    references: [vendors.id],
+  }),
+  location: one(locations, {
+    fields: [purchaseOrderItems.locationId],
+    references: [locations.id],
+  }),
+}))
+
+export const colorGroupsRelations = relations(colorGroups, ({ many }) => ({
+  colors: many(colors),
+}))
+
+export const colorsRelations = relations(colors, ({ one }) => ({
+  group: one(colorGroups, {
+    fields: [colors.groupId],
+    references: [colorGroups.id],
+  }),
+}))
+
 export const jobsRelations = relations(jobs, ({ many }) => ({
   cutlists: many(cutlists),
   timeLogs: many(jobTimeLogs),
+  supplyTransactions: many(supplyTransactions),
   partChecklists: many(partChecklists),
   gcodeFiles: many(gcodeFiles),
   sheets: many(jobSheets),
@@ -443,18 +601,7 @@ export const jobMaterialsRelations = relations(jobMaterials, ({ one, many }) => 
     references: [supplies.id],
   }),
   recutEntries: many(recutEntries),
-}))
-
-export const colorsRelations = relations(colors, ({ one, many }) => ({
-  group: one(colorGroups, {
-    fields: [colors.groupId],
-    references: [colorGroups.id],
-  }),
-  jobMaterials: many(jobMaterials),
-}))
-
-export const colorGroupsRelations = relations(colorGroups, ({ many }) => ({
-  colors: many(colors),
+  sheetCutLogs: many(sheetCutLogs),
 }))
 
 export const jobTimeLogsRelations = relations(jobTimeLogs, ({ one }) => ({
@@ -485,7 +632,7 @@ export const sheetCutLogsRelations = relations(sheetCutLogs, ({ one }) => ({
     fields: [sheetCutLogs.materialId],
     references: [jobMaterials.id],
   }),
-  recutEntry: one(recutEntries, {
+  recut: one(recutEntries, {
     fields: [sheetCutLogs.recutId],
     references: [recutEntries.id],
   }),
@@ -500,7 +647,7 @@ export const partChecklistsRelations = relations(partChecklists, ({ one, many })
     fields: [partChecklists.jobId],
     references: [jobs.id],
   }),
-  createdByUser: one(users, {
+  createdBy: one(users, {
     fields: [partChecklists.createdBy],
     references: [users.id],
   }),
@@ -512,7 +659,7 @@ export const partChecklistItemsRelations = relations(partChecklistItems, ({ one 
     fields: [partChecklistItems.checklistId],
     references: [partChecklists.id],
   }),
-  completedByUser: one(users, {
+  completedBy: one(users, {
     fields: [partChecklistItems.completedBy],
     references: [users.id],
   }),
@@ -523,7 +670,7 @@ export const gcodeFilesRelations = relations(gcodeFiles, ({ one }) => ({
     fields: [gcodeFiles.jobId],
     references: [jobs.id],
   }),
-  uploadedByUser: one(users, {
+  uploadedBy: one(users, {
     fields: [gcodeFiles.uploadedBy],
     references: [users.id],
   }),
@@ -536,93 +683,25 @@ export const jobSheetsRelations = relations(jobSheets, ({ one }) => ({
   }),
 }))
 
-export const jobHardwareRelations = relations(jobHardware, ({ one }) => ({
-  job: one(jobs, {
-    fields: [jobHardware.jobId],
-    references: [jobs.id],
-  }),
-}))
-
 export const jobRodsRelations = relations(jobRods, ({ one }) => ({
   job: one(jobs, {
     fields: [jobRods.jobId],
     references: [jobs.id],
   }),
-}))
-
-// New relations for supplies system
-export const locationsRelations = relations(locations, ({ many }) => ({
-  supplies: many(supplies),
-}))
-
-export const suppliesRelations = relations(supplies, ({ many }) => ({
-  supplyVendors: many(supplyVendors),
-  supplyLocations: many(supplyLocations),
-  transactions: many(supplyTransactions),
-}))
-
-export const supplyVendorsRelations = relations(supplyVendors, ({ one }) => ({
   supply: one(supplies, {
-    fields: [supplyVendors.supplyId],
+    fields: [jobRods.supplyId],
     references: [supplies.id],
   }),
-  vendor: one(vendors, {
-    fields: [supplyVendors.vendorId],
-    references: [vendors.id],
-  }),
 }))
 
-export const supplyLocationsRelations = relations(supplyLocations, ({ one }) => ({
-  supply: one(supplies, {
-    fields: [supplyLocations.supplyId],
-    references: [supplies.id],
-  }),
-  location: one(locations, {
-    fields: [supplyLocations.locationId],
-    references: [locations.id],
-  }),
-}))
-
-export const supplyTransactionsRelations = relations(supplyTransactions, ({ one }) => ({
-  supply: one(supplies, {
-    fields: [supplyTransactions.supplyId],
-    references: [supplies.id],
-  }),
+export const jobHardwareRelations = relations(jobHardware, ({ one }) => ({
   job: one(jobs, {
-    fields: [supplyTransactions.jobId],
+    fields: [jobHardware.jobId],
     references: [jobs.id],
   }),
-  user: one(users, {
-    fields: [supplyTransactions.userId],
-    references: [users.id],
-  }),
-}))
-
-// Purchase order relations
-export const vendorsRelations = relations(vendors, ({ many }) => ({
-  purchaseOrderItems: many(purchaseOrderItems),
-}))
-
-export const purchaseOrdersRelations = relations(purchaseOrders, ({ many, one }) => ({
-  items: many(purchaseOrderItems),
-  createdByUser: one(users, {
-    fields: [purchaseOrders.createdBy],
-    references: [users.id],
-  }),
-}))
-
-export const purchaseOrderItemsRelations = relations(purchaseOrderItems, ({ one }) => ({
-  purchaseOrder: one(purchaseOrders, {
-    fields: [purchaseOrderItems.purchaseOrderId],
-    references: [purchaseOrders.id],
-  }),
   supply: one(supplies, {
-    fields: [purchaseOrderItems.supplyId],
+    fields: [jobHardware.supplyId],
     references: [supplies.id],
-  }),
-  vendor: one(vendors, {
-    fields: [purchaseOrderItems.vendorId],
-    references: [vendors.id],
   }),
 }))
 
@@ -633,6 +712,108 @@ export const insertUserSchema = createInsertSchema(users).omit({
 })
 
 export const insertSessionSchema = createInsertSchema(sessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+})
+
+export const insertLocationCategorySchema = createInsertSchema(locationCategories).omit({
+  id: true,
+  createdAt: true,
+})
+
+export const insertLocationSchema = createInsertSchema(locations).omit({
+  id: true,
+  createdAt: true,
+})
+
+export const insertSupplySchema = createInsertSchema(supplies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+})
+
+export const insertSupplyWithRelationsSchema = createInsertSchema(supplies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  vendors: z
+    .array(
+      z.object({
+        id: z.number().optional(),
+        vendorId: z.number().optional(),
+        vendorPartNumber: z.string().optional(),
+        price: z.number().optional(),
+        isPreferred: z.boolean().optional(),
+      }),
+    )
+    .optional(),
+  locations: z
+    .array(
+      z.object({
+        id: z.number().optional(),
+        locationId: z.number().optional(),
+        onHandQuantity: z.number().optional(),
+        minimumQuantity: z.number().optional(),
+        orderGroupSize: z.number().optional(),
+      }),
+    )
+    .optional(),
+})
+
+export const insertSupplyVendorSchema = createInsertSchema(supplyVendors).omit({
+  id: true,
+  createdAt: true,
+})
+
+export const insertSupplyLocationSchema = createInsertSchema(supplyLocations).omit({
+  id: true,
+  createdAt: true,
+})
+
+export const insertInventoryMovementSchema = createInsertSchema(inventoryMovements).omit({
+  id: true,
+  createdAt: true,
+})
+
+export const insertSupplyTransactionSchema = createInsertSchema(supplyTransactions).omit({
+  id: true,
+  createdAt: true,
+})
+
+export const insertVendorSchema = createInsertSchema(vendors).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+})
+
+export const insertVendorContactSchema = createInsertSchema(vendorContacts).omit({
+  id: true,
+  createdAt: true,
+})
+
+export const insertInventoryAlertSchema = createInsertSchema(inventoryAlerts).omit({
+  id: true,
+  createdAt: true,
+})
+
+export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit({
+  id: true,
+  poNumber: true,
+  dateOrdered: true,
+  totalAmount: true,
+  createdAt: true,
+  updatedAt: true,
+})
+
+export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderItems).omit({
+  id: true,
+  totalPrice: true,
+  createdAt: true,
+})
+
+export const insertEmailSchema = createInsertSchema(emails).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
@@ -668,6 +849,11 @@ export const insertJobMaterialSchema = createInsertSchema(jobMaterials).omit({
   sheetStatuses: true,
 })
 
+export const insertJobTimeLogSchema = createInsertSchema(jobTimeLogs).omit({
+  id: true,
+  createdAt: true,
+})
+
 export const insertRecutEntrySchema = createInsertSchema(recutEntries).omit({
   id: true,
   createdAt: true,
@@ -695,88 +881,7 @@ export const insertGcodeFileSchema = createInsertSchema(gcodeFiles).omit({
   updatedAt: true,
 })
 
-// New schemas for supplies system
-export const insertLocationSchema = createInsertSchema(locations).omit({
-  id: true,
-  createdAt: true,
-})
-
-export const insertSupplySchema = createInsertSchema(supplies).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-})
-
-// Extended schema for supply creation/update with vendor and location relationships
-export const insertSupplyWithRelationsSchema = insertSupplySchema.extend({
-  vendors: z
-    .array(
-      z.object({
-        id: z.number().optional(),
-        vendorId: z.number().optional(),
-        vendorPartNumber: z.string().optional(),
-        price: z.number().optional(),
-        isPreferred: z.boolean().optional(),
-      }),
-    )
-    .optional(),
-  locations: z
-    .array(
-      z.object({
-        id: z.number().optional(),
-        locationId: z.number().optional(),
-        onHandQuantity: z.number().optional(),
-        minimumQuantity: z.number().optional(),
-        orderGroupSize: z.number().optional(),
-      }),
-    )
-    .optional(),
-})
-
-export const insertSupplyVendorSchema = createInsertSchema(supplyVendors).omit({
-  id: true,
-  createdAt: true,
-})
-
-export const insertSupplyLocationSchema = createInsertSchema(supplyLocations).omit({
-  id: true,
-  createdAt: true,
-})
-
-export const insertSupplyTransactionSchema = createInsertSchema(supplyTransactions).omit({
-  id: true,
-  createdAt: true,
-})
-
-// Purchase order schemas
-export const insertVendorSchema = createInsertSchema(vendors).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-})
-
-export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit({
-  id: true,
-  poNumber: true,
-  dateOrdered: true,
-  totalAmount: true,
-  createdAt: true,
-  updatedAt: true,
-})
-
-export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderItems).omit({
-  id: true,
-  totalPrice: true,
-  createdAt: true,
-})
-
 export const insertJobSheetSchema = createInsertSchema(jobSheets).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-})
-
-export const insertJobHardwareSchema = createInsertSchema(jobHardware).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
@@ -788,13 +893,19 @@ export const insertJobRodSchema = createInsertSchema(jobRods).omit({
   updatedAt: true,
 })
 
+export const insertJobHardwareSchema = createInsertSchema(jobHardware).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+})
+
 export const createJobSchema = z.object({
   customerName: z.string().min(1, "Customer name is required"),
   jobName: z.string().min(1, "Job name is required"),
   materials: z
     .array(
       z.object({
-        colorId: z.number().min(1, "Color is required"),
+        supplyId: z.number().min(1, "Supply is required"),
         totalSheets: z.number().min(1, "Must have at least 1 sheet"),
       }),
     )
@@ -806,129 +917,126 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 })
 
-// Types
+// Type exports
+export type User = typeof users.$inferSelect
+export type InsertUser = z.infer<typeof insertUserSchema>
 
 export type Session = typeof sessions.$inferSelect
 export type InsertSession = z.infer<typeof insertSessionSchema>
 
-export type User = typeof users.$inferSelect
-export type Vendors = typeof vendors.$inferSelect
-export type InsertUser = z.infer<typeof insertUserSchema>
+export type LocationCategory = typeof locationCategories.$inferSelect
+export type InsertLocationCategory = z.infer<typeof insertLocationCategorySchema>
+
+export type Location = typeof locations.$inferSelect
+export type InsertLocation = z.infer<typeof insertLocationSchema>
+
+export type Supply = typeof supplies.$inferSelect
+export type InsertSupply = z.infer<typeof insertSupplySchema>
+
+export type SupplyVendor = typeof supplyVendors.$inferSelect
+export type InsertSupplyVendor = z.infer<typeof insertSupplyVendorSchema>
+
+export type SupplyLocation = typeof supplyLocations.$inferSelect
+export type InsertSupplyLocation = z.infer<typeof insertSupplyLocationSchema>
+
+export type InventoryMovement = typeof inventoryMovements.$inferSelect
+export type InsertInventoryMovement = z.infer<typeof insertInventoryMovementSchema>
+
+export type SupplyTransaction = typeof supplyTransactions.$inferSelect
+export type InsertSupplyTransaction = z.infer<typeof insertSupplyTransactionSchema>
+
+export type Vendor = typeof vendors.$inferSelect
+export type InsertVendor = z.infer<typeof insertVendorSchema>
+
+export type VendorContact = typeof vendorContacts.$inferSelect
+export type InsertVendorContact = z.infer<typeof insertVendorContactSchema>
+
+export type InventoryAlert = typeof inventoryAlerts.$inferSelect
+export type InsertInventoryAlert = z.infer<typeof insertInventoryAlertSchema>
+
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect
+export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>
+
+export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect
+export type InsertPurchaseOrderItem = z.infer<typeof insertPurchaseOrderItemSchema>
+
+export type Email = typeof emails.$inferSelect
+export type InsertEmail = z.infer<typeof insertEmailSchema>
+
 export type ColorGroup = typeof colorGroups.$inferSelect
 export type InsertColorGroup = z.infer<typeof insertColorGroupSchema>
+
 export type Color = typeof colors.$inferSelect
 export type InsertColor = z.infer<typeof insertColorSchema>
+
 export type Job = typeof jobs.$inferSelect
 export type InsertJob = z.infer<typeof insertJobSchema>
+
 export type Cutlist = typeof cutlists.$inferSelect
 export type InsertCutlist = z.infer<typeof insertCutlistSchema>
+
 export type JobMaterial = typeof jobMaterials.$inferSelect
 export type InsertJobMaterial = z.infer<typeof insertJobMaterialSchema>
+
 export type JobTimeLog = typeof jobTimeLogs.$inferSelect
+export type InsertJobTimeLog = z.infer<typeof insertJobTimeLogSchema>
+
 export type RecutEntry = typeof recutEntries.$inferSelect
 export type InsertRecutEntry = z.infer<typeof insertRecutEntrySchema>
+
 export type SheetCutLog = typeof sheetCutLogs.$inferSelect
 export type InsertSheetCutLog = z.infer<typeof insertSheetCutLogSchema>
-export type CreateJob = z.infer<typeof createJobSchema>
-export type Login = z.infer<typeof loginSchema>
 
-// Enhanced types for frontend
-export type CutlistWithMaterials = Cutlist & {
-  materials: (JobMaterial & { color: Color })[]
+export type PartChecklist = typeof partChecklists.$inferSelect
+export type InsertPartChecklist = z.infer<typeof insertPartChecklistSchema>
+
+export type PartChecklistItem = typeof partChecklistItems.$inferSelect
+export type InsertPartChecklistItem = z.infer<typeof insertPartChecklistItemSchema>
+
+export type PartChecklistType = PartChecklist & {
+  items: PartChecklistItem[]
+  createdBy: User
 }
+
+export type PartChecklistItemType = PartChecklistItem
+
+export type GcodeFile = typeof gcodeFiles.$inferSelect
+export type InsertGcodeFile = z.infer<typeof insertGcodeFileSchema>
+
+export type JobSheet = typeof jobSheets.$inferSelect
+export type InsertJobSheet = z.infer<typeof insertJobSheetSchema>
+
+export type JobRod = typeof jobRods.$inferSelect
+export type InsertJobRod = z.infer<typeof insertJobRodSchema>
+
+export type JobHardware = typeof jobHardware.$inferSelect
+export type InsertJobHardware = z.infer<typeof insertJobHardwareSchema>
 
 export type JobWithCutlists = Job & {
   cutlists: CutlistWithMaterials[]
-  timeLogs: JobTimeLog[]
-  partChecklists: PartChecklist[]
-  gcodeFiles: GcodeFile[]
-  sheets: JobSheet[]
-  hardware: JobHardware[]
-  rods: JobRod[]
+  timeLogs: JobTimeLogType[]
+  partChecklists: PartChecklistType[]
+  gcodeFiles: GcodeFileType[]
+  sheets: JobSheetType[]
+  hardware: (JobHardware & { supply: SupplyType })[]
+  rods: JobRodType[]
 }
 
-// Keep backward compatibility - include timer logs
-export type JobWithMaterials = Job & {
-  cutlists: (typeof cutlists.$inferSelect & {
-    materials: (typeof jobMaterials.$inferSelect & {
-      color: typeof colors.$inferSelect
-      recutEntries: (typeof recutEntries.$inferSelect)[]
-    })[]
-  })[]
-  jobTimeLogs: (typeof jobTimeLogs.$inferSelect)[]
+export type JobWithChecklists = Job & {
+  checklists: PartChecklistType[]
+  jobTimeLogs: JobTimeLog[]
 }
 
 export type ColorWithGroup = Color & {
   group: ColorGroup | null
 }
 
-// New types for supplies system
-export type Location = typeof locations.$inferSelect
-export type InsertLocation = z.infer<typeof insertLocationSchema>
-export type Supply = typeof supplies.$inferSelect
-export type InsertSupply = z.infer<typeof insertSupplySchema>
-export type SupplyVendor = typeof supplyVendors.$inferSelect
-export type InsertSupplyVendor = z.infer<typeof insertSupplyVendorSchema>
-export type SupplyLocation = typeof supplyLocations.$inferSelect
-export type InsertSupplyLocation = z.infer<typeof insertSupplyLocationSchema>
-export type SupplyTransaction = typeof supplyTransactions.$inferSelect
-export type InsertSupplyTransaction = z.infer<typeof insertSupplyTransactionSchema>
+export type LocationWithCategory = Location & {
+  category: LocationCategory | null
+}
 
 export type SupplyWithLocation = Supply & {
   location: Location | null
-}
-
-// Purchase order types
-export type Vendor = {
-  id: number
-  name: string
-  company: string
-  contact_info: string | null
-  createdAt: Date
-}
-export type InsertVendor = z.infer<typeof insertVendorSchema>
-export type PurchaseOrder = typeof purchaseOrders.$inferSelect
-export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>
-export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect
-export type InsertPurchaseOrderItem = z.infer<typeof insertPurchaseOrderItemSchema>
-
-export type PurchaseOrderWithItems = PurchaseOrder & {
-  items: (PurchaseOrderItem & {
-    supply: Supply
-    vendor: Vendor
-  })[]
-  createdByUser: User
-}
-
-// New types for enhanced inventory management
-export type LocationCategory = typeof locationCategories.$inferSelect
-export type InsertLocationCategory = typeof locationCategories.$inferInsert
-export type InventoryMovement = typeof inventoryMovements.$inferSelect
-export type InsertInventoryMovement = typeof inventoryMovements.$inferInsert
-export type VendorContact = typeof vendorContacts.$inferSelect
-export type InsertVendorContact = typeof vendorContacts.$inferInsert
-export type InventoryAlert = typeof inventoryAlerts.$inferSelect
-export type InsertInventoryAlert = typeof inventoryAlerts.$inferInsert
-
-export type Email = typeof emails.$inferSelect
-export type InsertEmail = typeof emails.$inferInsert
-
-export type PartChecklist = typeof partChecklists.$inferSelect
-export type InsertPartChecklist = z.infer<typeof insertPartChecklistSchema>
-export type PartChecklistItem = typeof partChecklistItems.$inferSelect
-export type InsertPartChecklistItem = z.infer<typeof insertPartChecklistItemSchema>
-export type GcodeFile = typeof gcodeFiles.$inferSelect
-export type InsertGcodeFile = z.infer<typeof insertGcodeFileSchema>
-
-export type JobSheet = typeof jobSheets.$inferSelect
-export type InsertJobSheet = z.infer<typeof insertJobSheetSchema>
-export type JobHardware = typeof jobHardware.$inferSelect
-export type InsertJobHardware = z.infer<typeof insertJobHardwareSchema>
-export type JobRod = typeof jobRods.$inferSelect
-export type InsertJobRod = z.infer<typeof insertJobRodSchema>
-
-export type LocationWithCategory = Location & {
-  category: LocationCategory | null
 }
 
 export type SupplyWithLocationEnhanced = Supply & {
@@ -941,16 +1049,16 @@ export type VendorWithContacts = Vendor & {
   contacts: VendorContact[]
 }
 
-export type PurchaseOrderWithItemsEnhanced = PurchaseOrder & {
+export type PurchaseOrderWithItems = PurchaseOrder & {
   items: (PurchaseOrderItem & {
     supply: Supply
     vendor: Vendor
     location: Location
   })[]
-  createdByUser: User
+  createdBy: User
 }
 
 export type PartChecklistWithItems = PartChecklist & {
   items: PartChecklistItem[]
-  createdByUser: User
+  createdBy: User
 }

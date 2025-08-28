@@ -7,6 +7,8 @@ import bcrypt from "bcryptjs"
 import multer from "multer"
 import path from "path"
 import fs from "fs"
+import csv from "csv-parser"
+import * as XLSX from "xlsx"
 
 import { storage } from "./storage"
 import sgMail from "@sendgrid/mail"
@@ -2232,13 +2234,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Job Hardware endpoints
   app.get("/api/jobs/:jobId/hardware", requireAuth, async (req, res) => {
     try {
       const jobId = Number.parseInt(req.params.jobId)
       const hardware = await db
-        .select()
+        .select({
+          id: jobHardware.id,
+          jobId: jobHardware.jobId,
+          supplyId: jobHardware.supplyId,
+          onHand: jobHardware.onHand,
+          available: jobHardware.available,
+          allocated: jobHardware.allocated,
+          used: jobHardware.used,
+          stillRequired: jobHardware.stillRequired,
+          createdAt: jobHardware.createdAt,
+          updatedAt: jobHardware.updatedAt,
+          supply: {
+            id: supplies.id,
+            name: supplies.name,
+            partNumber: supplies.partNumber,
+            description: supplies.description,
+            pieceSize: supplies.pieceSize,
+          },
+        })
         .from(jobHardware)
+        .leftJoin(supplies, eq(jobHardware.supplyId, supplies.id))
         .where(eq(jobHardware.jobId, jobId))
         .orderBy(jobHardware.createdAt)
 
@@ -2252,24 +2272,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/jobs/:jobId/hardware", requireAuth, async (req, res) => {
     try {
       const jobId = Number.parseInt(req.params.jobId)
-      const { hardwareName, qty, onHandQty, needed, used, stillRequired } = req.body
+      const { supplyId, allocated, used, stillRequired } = req.body
 
-      if (!hardwareName || !qty || qty < 0) {
-        return res.status(400).json({ message: "Hardware name and valid quantity required" })
+      if (!supplyId) {
+        return res.status(400).json({ message: "Supply ID is required" })
       }
+
+      const supply = await db.select().from(supplies).where(eq(supplies.id, supplyId)).limit(1)
+      if (!supply.length) {
+        return res.status(400).json({ message: "Supply not found" })
+      }
+
+      // Get total on hand quantity across all locations for this supply
+      const supplyLocationData = await db
+        .select({
+          totalOnHand: sql<number>`sum(${supplyLocations.onHandQuantity})`,
+          totalAllocated: sql<number>`sum(${supplyLocations.allocatedQuantity})`,
+        })
+        .from(supplyLocations)
+        .where(eq(supplyLocations.supplyId, supplyId))
+        .groupBy(supplyLocations.supplyId)
+
+      const onHandQty = supplyLocationData[0]?.totalOnHand || 0
+      const currentAllocated = supplyLocationData[0]?.totalAllocated || 0
+      const availableQty = Math.max(0, onHandQty - currentAllocated)
 
       const hardware = await db
         .insert(jobHardware)
         .values({
           jobId,
-          hardwareName,
-          qty,
-          onHandQty: onHandQty || 0,
-          needed: needed || 0,
+          supplyId,
+          onHand: onHandQty,
+          available: availableQty,
+          allocated: allocated || 0,
           used: used || 0,
           stillRequired: stillRequired || 0,
         })
         .returning()
+
+      if (allocated && allocated > 0) {
+        await db
+          .update(supplyLocations)
+          .set({
+            allocatedQuantity: sql`${supplyLocations.allocatedQuantity} + ${allocated}`,
+            availableQuantity: sql`${supplyLocations.availableQuantity} - ${allocated}`,
+          })
+          .where(eq(supplyLocations.supplyId, supplyId))
+      }
 
       broadcastToClients({ type: "job_hardware_added", data: hardware[0] })
       res.json(hardware[0])
@@ -2282,21 +2331,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/jobs/:jobId/hardware/:id", requireAuth, async (req, res) => {
     try {
       const id = Number.parseInt(req.params.id)
-      const { hardwareName, qty, onHandQty, needed, used, stillRequired } = req.body
+      const { allocated, used, stillRequired } = req.body
+
+      const currentHardware = await db.select().from(jobHardware).where(eq(jobHardware.id, id)).limit(1)
+
+      if (!currentHardware.length) {
+        return res.status(404).json({ message: "Hardware not found" })
+      }
+
+      const current = currentHardware[0]
+      const allocationDiff = (allocated || 0) - current.allocated
+
+      const supplyLocationData = await db
+        .select({
+          totalOnHand: sql<number>`sum(${supplyLocations.onHandQuantity})`,
+          totalAllocated: sql<number>`sum(${supplyLocations.allocatedQuantity})`,
+        })
+        .from(supplyLocations)
+        .where(eq(supplyLocations.supplyId, current.supplyId))
+        .groupBy(supplyLocations.supplyId)
+
+      const onHandQty = supplyLocationData[0]?.totalOnHand || 0
+      const currentAllocatedTotal = supplyLocationData[0]?.totalAllocated || 0
+      const newAllocatedTotal = currentAllocatedTotal + allocationDiff
+      const availableQty = Math.max(0, onHandQty - newAllocatedTotal)
 
       const hardware = await db
         .update(jobHardware)
         .set({
-          hardwareName,
-          qty,
-          onHandQty,
-          needed,
-          used,
-          stillRequired,
+          onHand: onHandQty,
+          available: availableQty,
+          allocated: allocated || current.allocated,
+          used: used !== undefined ? used : current.used,
+          stillRequired: stillRequired !== undefined ? stillRequired : current.stillRequired,
           updatedAt: new Date(),
         })
         .where(eq(jobHardware.id, id))
         .returning()
+
+      if (allocationDiff !== 0) {
+        await db
+          .update(supplyLocations)
+          .set({
+            allocatedQuantity: sql`${supplyLocations.allocatedQuantity} + ${allocationDiff}`,
+            availableQuantity: sql`${supplyLocations.availableQuantity} - ${allocationDiff}`,
+          })
+          .where(eq(supplyLocations.supplyId, current.supplyId))
+      }
 
       broadcastToClients({ type: "job_hardware_updated", data: hardware[0] })
       res.json(hardware[0])
@@ -2309,6 +2390,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/jobs/:jobId/hardware/:id", requireAuth, async (req, res) => {
     try {
       const id = Number.parseInt(req.params.id)
+
+      const hardware = await db.select().from(jobHardware).where(eq(jobHardware.id, id)).limit(1)
+
+      if (hardware.length > 0) {
+        const hardwareRecord = hardware[0]
+
+        if (hardwareRecord.allocated > 0) {
+          await db
+            .update(supplyLocations)
+            .set({
+              allocatedQuantity: sql`${supplyLocations.allocatedQuantity} - ${hardwareRecord.allocated}`,
+              availableQuantity: sql`${supplyLocations.availableQuantity} + ${hardwareRecord.allocated}`,
+            })
+            .where(eq(supplyLocations.supplyId, hardwareRecord.supplyId))
+        }
+      }
 
       await db.delete(jobHardware).where(eq(jobHardware.id, id))
 
@@ -2382,6 +2479,177 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Delete job rod error:", error)
       res.status(500).json({ message: "Failed to delete job rod" })
+    }
+  })
+
+  app.post("/api/jobs/:id/import", requireAuth, upload.single("importFile"), async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id)
+      const { category } = req.body
+      const file = req.file
+
+      if (!file) {
+        return res.status(400).json({ message: "No file uploaded" })
+      }
+
+      if (!["sheets", "hardware", "rods"].includes(category)) {
+        return res.status(400).json({ message: "Invalid import category" })
+      }
+
+      let data: any[] = []
+      const errors: string[] = []
+
+      // Parse file based on extension
+      const fileExtension = path.extname(file.originalname).toLowerCase()
+
+      if (fileExtension === ".csv") {
+        // Parse CSV file
+        const results: any[] = []
+        await new Promise((resolve, reject) => {
+          fs.createReadStream(file.path)
+            .pipe(csv())
+            .on("data", (row) => results.push(row))
+            .on("end", resolve)
+            .on("error", reject)
+        })
+        data = results
+      } else if ([".xlsx", ".xls"].includes(fileExtension)) {
+        // Parse Excel file
+        const workbook = XLSX.readFile(file.path)
+        const sheetName = workbook.SheetNames[0]
+        const worksheet = workbook.Sheets[sheetName]
+        data = XLSX.utils.sheet_to_json(worksheet)
+      } else {
+        return res.status(400).json({ message: "Unsupported file format" })
+      }
+
+      let imported = 0
+
+      // Process data based on category
+      if (category === "sheets") {
+        for (const row of data) {
+          try {
+            const materialType = row.materialtype || row.MaterialType || row["Material Type"]
+            const qty = Number.parseInt(row.qty || row.Qty || row.Quantity || "0")
+
+            if (!materialType || !qty || qty < 1) {
+              errors.push(`Invalid sheet data: ${JSON.stringify(row)}`)
+              continue
+            }
+
+            await db.insert(jobSheets).values({
+              jobId,
+              materialType: materialType.toString(),
+              qty,
+            })
+            imported++
+          } catch (error) {
+            errors.push(`Failed to import sheet: ${JSON.stringify(row)} - ${error}`)
+          }
+        }
+      } else if (category === "hardware") {
+        for (const row of data) {
+          try {
+            const hardwareName = row.hardwarename || row.HardwareName || row["Hardware Name"]
+            const allocated = Number.parseInt(row.allocated || row.Allocated || "0")
+            const used = Number.parseInt(row.used || row.Used || "0")
+            const stillRequired = Number.parseInt(
+              row.stillrequired || row.StillRequired || row["Still Required"] || "0",
+            )
+
+            if (!hardwareName) {
+              errors.push(`Missing hardware name: ${JSON.stringify(row)}`)
+              continue
+            }
+
+            // Find matching supply by name
+            const [supply] = await db.select().from(supplies).where(eq(supplies.name, hardwareName.toString())).limit(1)
+
+            if (!supply) {
+              errors.push(`Hardware not found in inventory: ${hardwareName}`)
+              continue
+            }
+
+            // Calculate on hand and available from supply locations
+            const locationData = await db
+              .select({
+                onHand: sql<number>`COALESCE(SUM(${supplyLocations.onHandQuantity}), 0)`,
+                allocated: sql<number>`COALESCE(SUM(${supplyLocations.allocatedQuantity}), 0)`,
+              })
+              .from(supplyLocations)
+              .where(eq(supplyLocations.supplyId, supply.id))
+
+            const onHand = locationData[0]?.onHand || 0
+            const available = onHand - (locationData[0]?.allocated || 0)
+
+            await db.insert(jobHardware).values({
+              jobId,
+              supplyId: supply.id,
+              onHand,
+              available,
+              allocated,
+              used,
+              stillRequired,
+            })
+            imported++
+          } catch (error) {
+            errors.push(`Failed to import hardware: ${JSON.stringify(row)} - ${error}`)
+          }
+        }
+      } else if (category === "rods") {
+        for (const row of data) {
+          try {
+            const rodName = row.rodname || row.RodName || row["Rod Name"]
+            const lengthInches = row.lengthinches || row.LengthInches || row["Length Inches"] || row.length
+
+            if (!rodName || !lengthInches) {
+              errors.push(`Missing rod data: ${JSON.stringify(row)}`)
+              continue
+            }
+
+            // Check if rod exists in supplies (auto-population)
+            const [supply] = await db
+              .select()
+              .from(supplies)
+              .where(
+                or(
+                  eq(supplies.name, rodName.toString()),
+                  sql`LOWER(${supplies.name}) LIKE LOWER(${"%" + rodName.toString() + "%"})`,
+                ),
+              )
+              .limit(1)
+
+            await db.insert(jobRods).values({
+              jobId,
+              supplyId: supply?.id || null,
+              rodName: rodName.toString(),
+              lengthInches: lengthInches.toString(),
+              allocated: Number.parseInt(row.allocated || row.Allocated || "0"),
+              used: Number.parseInt(row.used || row.Used || "0"),
+              stillRequired: Number.parseInt(row.stillrequired || row.StillRequired || row["Still Required"] || "0"),
+            })
+            imported++
+          } catch (error) {
+            errors.push(`Failed to import rod: ${JSON.stringify(row)} - ${error}`)
+          }
+        }
+      }
+
+      // Clean up uploaded file
+      fs.unlinkSync(file.path)
+
+      res.json({
+        message: `Import completed: ${imported} items imported`,
+        imported,
+        errors,
+      })
+    } catch (error) {
+      console.error("File import error:", error)
+      // Clean up file on error
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path)
+      }
+      res.status(500).json({ message: "Failed to import file" })
     }
   })
 

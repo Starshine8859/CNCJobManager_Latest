@@ -26,7 +26,7 @@ import {
 import Layout from "@/components/layout"
 import { apiRequest } from "@/lib/queryClient"
 import JobDetailsModal from "@/components/job-details-modal-new"
-import type { JobWithMaterials } from "@shared/schema"
+import type { JobWithCutlists } from "@shared/schema"
 
 interface JobPreparationData {
   id: number
@@ -47,7 +47,7 @@ interface JobPreparationData {
 export default function JobPreparation() {
   const [searchTerm, setSearchTerm] = useState("")
   const [filterStatus, setFilterStatus] = useState<string>("all")
-  const [selectedJob, setSelectedJob] = useState<JobWithMaterials | null>(null)
+  const [selectedJob, setSelectedJob] = useState<JobWithCutlists | null>(null)
   const [showFilters, setShowFilters] = useState(false)
   const [showAnalytics, setShowAnalytics] = useState(false)
   const [showCreateJob, setShowCreateJob] = useState(false)
@@ -137,27 +137,36 @@ export default function JobPreparation() {
     return effectiveTotalSheets > 0 ? Math.round((completedSheets / effectiveTotalSheets) * 100) : 0
   }
 
-  const processedJobs: JobPreparationData[] = jobs.map((job: any) => ({
-    id: job.id,
-    jobName: job.jobName,
-    customerName: job.customerName,
-    createdAt: job.createdAt,
-    status: job.status,
-    priority: job.priority || "medium",
-    preparationProgress: calculatePreparationProgress(job),
-    sheetsCount:
-      job.cutlists?.reduce(
-        (total: number, cutlist: any) =>
-          total +
-          (cutlist.materials?.reduce((matTotal: number, mat: any) => matTotal + (mat.totalSheets || 0), 0) || 0),
-        0,
-      ) || 0,
-    hardwareCount: 0, // Will be populated from job-specific hardware API
-    rodsCount: 0, // Will be populated from job-specific rods API
-    assignedTo: job.assignedTo || "Unassigned",
-    totalDuration: job.totalDuration,
-    cutlists: job.cutlists,
-  }))
+  const processedJobs: JobPreparationData[] = jobs.map((job: any) => {
+    console.log("[v0] Processing job:", job.id, "Status:", job.status, "Original assignedTo:", job.assignedTo)
+
+    const shouldBeUnassigned = job.status === "paused" || job.status === "done"
+    const finalAssignment = shouldBeUnassigned ? "Unassigned" : job.assignedTo || "Unassigned"
+
+    console.log("[v0] Job", job.id, "should be unassigned:", shouldBeUnassigned, "final assignment:", finalAssignment)
+
+    return {
+      id: job.id,
+      jobName: job.jobName,
+      customerName: job.customerName,
+      createdAt: job.createdAt,
+      status: job.status,
+      priority: job.priority || "medium",
+      preparationProgress: calculatePreparationProgress(job),
+      sheetsCount:
+        job.cutlists?.reduce(
+          (total: number, cutlist: any) =>
+            total +
+            (cutlist.materials?.reduce((matTotal: number, mat: any) => matTotal + (mat.totalSheets || 0), 0) || 0),
+          0,
+        ) || 0,
+      hardwareCount: 0, // Will be populated from job-specific hardware API
+      rodsCount: 0, // Will be populated from job-specific rods API
+      assignedTo: finalAssignment,
+      totalDuration: job.totalDuration,
+      cutlists: job.cutlists,
+    }
+  })
 
   const filteredJobs = processedJobs.filter((job) => {
     const matchesSearch =
@@ -574,3 +583,4 @@ export default function JobPreparation() {
     </Layout>
   )
 }
+  
