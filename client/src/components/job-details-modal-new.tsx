@@ -1,1097 +1,825 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useEffect, useMemo } from "react"
-import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query"
-import { Trash2, Palette, Maximize2, Plus, Upload, FileText } from "lucide-react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useState, useEffect, useCallback } from "react"
+import { Maximize2, Upload, FileText, Trash2, Plus } from "lucide-react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { apiRequest } from "@/lib/queryClient"
 import { useWebSocket } from "@/hooks/use-websocket"
-import type { JobWithMaterials, ColorWithGroup, JobSheet, JobHardware, JobRod } from "@shared/schema"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import type {
+  JobWithCutlists,
+  Supply,
+  JobSheet,
+  JobHardware,
+  JobRod,
+  PartChecklist,
+  PartChecklistItem,
+} from "@shared/schema"
 
 interface JobDetailsModalProps {
-  job: JobWithMaterials | null
+  job: JobWithCutlists | null
   open: boolean
   onOpenChange: (open: boolean) => void
   viewOnlyMode?: boolean
   onOpenPopup?: (jobId: number) => void
 }
 
-interface RecutHistorySectionProps {
-  materialId: number
-}
-
-function RecutHistorySection({ materialId }: RecutHistorySectionProps) {
+const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpenPopup }: JobDetailsModalProps) => {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-
-  const { data: recutEntries = [], isLoading } = useQuery({
-    queryKey: [`/api/materials/${materialId}/recuts`],
-    enabled: !!materialId,
-  })
-
-  // Type-safe access to recut entries
-  const entries = Array.isArray(recutEntries) ? recutEntries : []
-
-  // Loading states for individual recut sheet buttons - separate for cut and skip
-  const [loadingRecutCutButtons, setLoadingRecutCutButtons] = useState<Record<string, Set<number>>>({})
-  const [loadingRecutSkipButtons, setLoadingRecutSkipButtons] = useState<Record<string, Set<number>>>({})
-
-  const updateRecutSheetStatusMutation = useMutation({
-    mutationFn: ({
-      recutId,
-      sheetIndex,
-      status,
-      actionType,
-    }: {
-      recutId: number
-      sheetIndex: number
-      status: string
-      actionType: "cut" | "skip"
-    }) => apiRequest("PUT", `/api/recuts/${recutId}/sheet-status`, { sheetIndex, status }),
-    onMutate: ({ recutId, sheetIndex, status, actionType }) => {
-      // Set loading state based on which button was clicked
-      if (actionType === "cut") {
-        setLoadingRecutCutButtons((prev) => ({
-          ...prev,
-          [recutId]: new Set([...Array.from(prev[recutId] || []), sheetIndex]),
-        }))
-      } else if (actionType === "skip") {
-        setLoadingRecutSkipButtons((prev) => ({
-          ...prev,
-          [recutId]: new Set([...Array.from(prev[recutId] || []), sheetIndex]),
-        }))
-      }
-    },
-    onSuccess: (_, variables) => {
-      // Clear loading state based on which button was clicked
-      if (variables.actionType === "cut") {
-        setLoadingRecutCutButtons((prev) => ({
-          ...prev,
-          [variables.recutId]: new Set(
-            Array.from(prev[variables.recutId] || []).filter((i) => i !== variables.sheetIndex),
-          ),
-        }))
-      } else if (variables.actionType === "skip") {
-        setLoadingRecutSkipButtons((prev) => ({
-          ...prev,
-          [variables.recutId]: new Set(
-            Array.from(prev[variables.recutId] || []).filter((i) => i !== variables.sheetIndex),
-          ),
-        }))
-      }
-
-      queryClient.invalidateQueries({ queryKey: [`/api/materials/${materialId}/recuts`] })
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] })
-    },
-    onError: (error, variables) => {
-      // Clear loading state based on which button was clicked
-      if (variables.actionType === "cut") {
-        setLoadingRecutCutButtons((prev) => ({
-          ...prev,
-          [variables.recutId]: new Set(
-            Array.from(prev[variables.recutId] || []).filter((i) => i !== variables.sheetIndex),
-          ),
-        }))
-      } else if (variables.actionType === "skip") {
-        setLoadingRecutSkipButtons((prev) => ({
-          ...prev,
-          [variables.recutId]: new Set(
-            Array.from(prev[variables.recutId] || []).filter((i) => i !== variables.sheetIndex),
-          ),
-        }))
-      }
-
-      toast({ title: "Error", description: "Failed to update recut sheet status" })
-    },
-  })
-
-  const deleteRecutMutation = useMutation({
-    mutationFn: (recutId: number) => apiRequest("DELETE", `/api/recuts/${recutId}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/materials/${materialId}/recuts`] })
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] })
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] })
-      toast({ title: "Success", description: "Recut entry deleted successfully" })
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to delete recut entry" })
-    },
-  })
-
-  const handleRecutSheetCut = (recutId: number, sheetIndex: number, currentStatus: string) => {
-    // Toggle: if already cut, set to pending; otherwise set to cut
-    const newStatus = currentStatus === "cut" ? "pending" : "cut"
-    updateRecutSheetStatusMutation.mutate({
-      recutId,
-      sheetIndex,
-      status: newStatus,
-      actionType: "cut",
-    })
-  }
-
-  const handleRecutSheetSkip = (recutId: number, sheetIndex: number, currentStatus: string) => {
-    // Toggle: if already skipped, set to pending; otherwise set to pending
-    const newStatus = currentStatus === "skip" ? "pending" : "skip"
-    updateRecutSheetStatusMutation.mutate({
-      recutId,
-      sheetIndex,
-      status: newStatus,
-      actionType: "skip",
-    })
-  }
-
-  if (isLoading) {
-    return (
-      <div className="mt-4 p-3 bg-orange-50 rounded-lg">
-        <h4 className="font-medium mb-2 text-orange-800">Recut Tracking</h4>
-        <div className="text-sm text-orange-600">Loading recut history...</div>
-      </div>
-    )
-  }
-
-  if (entries.length === 0) {
-    return (
-      <div className="mt-4 p-3 bg-orange-50 rounded-lg">
-        <h4 className="font-medium mb-2 text-orange-800">Recut Tracking</h4>
-        <div className="text-sm text-orange-600">No recut entries found</div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="mt-4 p-3 bg-orange-50 rounded-lg">
-      <div className="flex items-center justify-between mb-2">
-        <h4 className="font-medium text-orange-800">Recut History</h4>
-        {/* Button to add recut */}
-      </div>
-
-      {entries && entries.length > 0 ? (
-        <div className="space-y-3">
-          {entries.map((recut, index) => {
-            const recutStatuses = recut.sheetStatuses || []
-            const completedCount = recutStatuses.filter((status) => status === "cut").length
-            const skippedCount = recutStatuses.filter((status) => status === "skip").length
-            const effectiveTotal = recut.quantity - skippedCount
-            const progressPercentage = effectiveTotal > 0 ? Math.round((completedCount / effectiveTotal) * 100) : 0
-
-            return (
-              <div key={recut.id} className="border border-orange-200 rounded-lg p-3 bg-white">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm font-medium text-orange-800">Recut #{index + 1}</span>
-                    {recut.reason && (
-                      <span className="text-xs text-orange-600 bg-orange-100 px-2 py-1 rounded">{recut.reason}</span>
-                    )}
-                  </div>
-                  <div className="text-xs text-orange-600">
-                    {completedCount}/{effectiveTotal} sheets ({progressPercentage}%)
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-6 gap-1 mt-2">
-                  {Array.from({ length: recut.quantity }, (_, i) => {
-                    const status = recutStatuses[i] || "pending"
-                    const isCutLoading = loadingRecutCutButtons[recut.id]?.has(i) || false
-                    const isSkipLoading = loadingRecutSkipButtons[recut.id]?.has(i) || false
-
-                    return (
-                      <div key={`recut-${recut.id}-sheet-${i}`} className="flex flex-col items-center gap-1">
-                        <div className="text-xs font-medium text-orange-700">R{i + 1}</div>
-
-                        <div className="flex gap-0.5">
-                          <button
-                            onClick={() => handleRecutSheetCut(recut.id, i)}
-                            disabled={isCutLoading}
-                            className={`px-1 py-0.5 rounded text-xs font-medium transition-all duration-150 flex items-center gap-0.5 ${
-                              status === "cut"
-                                ? "bg-green-600 text-white"
-                                : "bg-green-100 text-green-700 hover:bg-green-200"
-                            } ${isCutLoading ? "opacity-75" : ""}`}
-                          >
-                            {isCutLoading ? (
-                              <div className="w-2 h-2 border border-current border-t-transparent rounded-full animate-spin"></div>
-                            ) : null}
-                            ✓
-                          </button>
-                          <button
-                            onClick={() => handleRecutSheetSkip(recut.id, i)}
-                            disabled={isSkipLoading}
-                            className={`px-1 py-0.5 rounded text-xs font-medium transition-all duration-150 flex items-center gap-0.5 ${
-                              status === "skip" ? "bg-red-600 text-white" : "bg-red-100 text-red-700 hover:bg-red-200"
-                            } ${isSkipLoading ? "opacity-75" : ""}`}
-                          >
-                            {isSkipLoading ? (
-                              <div className="w-2 h-2 border border-current border-t-transparent rounded-full animate-spin"></div>
-                            ) : null}
-                            ×
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      ) : (
-        <div className="text-center py-4 text-orange-600 text-sm">No recuts yet</div>
-      )}
-    </div>
-  )
-}
-
-export default function JobDetailsModal({
-  job,
-  open,
-  onOpenChange,
-  viewOnlyMode = false,
-  onOpenPopup,
-}: JobDetailsModalProps) {
-  const { toast } = useToast()
-  const queryClient = useQueryClient()
-
-  const [activeTab, setActiveTab] = useState("materials")
-
-  // Live timer state
-  const [liveTimerSeconds, setLiveTimerSeconds] = useState<number>(0)
-  const [timerStartTime, setTimerStartTime] = useState<Date | null>(null)
-
-  // Optimistic state for immediate UI updates
-  const [optimisticSheetStatuses, setOptimisticSheetStatuses] = useState<Record<string, Record<number, string>>>({})
-
-  // Loading states for individual sheet buttons - separate for cut and skip
-  const [loadingCutButtons, setLoadingCutButtons] = useState<Record<string, Set<number>>>({})
-  const [loadingSkipButtons, setLoadingSkipButtons] = useState<Record<string, Set<number>>>({})
-
-  const [jobSheets, setJobSheets] = useState<JobSheet[]>([])
-  const [jobHardware, setJobHardware] = useState<JobHardware[]>([])
-  const [jobRods, setJobRods] = useState<JobRod[]>([])
-
-  const [newSheetMaterial, setNewSheetMaterial] = useState("")
+  const [localJob, setLocalJob] = useState<JobWithCutlists | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
+  const [showImportDialog, setShowImportDialog] = useState(false)
+  const [importCategory, setImportCategory] = useState<"sheets" | "hardware" | "rods">("sheets")
+  const [newSheetMaterialType, setNewSheetMaterialType] = useState("")
   const [newSheetQty, setNewSheetQty] = useState("")
-  const [newHardwareName, setNewHardwareName] = useState("")
-  const [newHardwareQty, setNewHardwareQty] = useState("")
-  const [newHardwareOnHand, setNewHardwareOnHand] = useState("")
-  const [newHardwareNeeded, setNewHardwareNeeded] = useState("")
+  const [newHardwareSupplyId, setNewHardwareSupplyId] = useState("")
+  const [newHardwareAllocated, setNewHardwareAllocated] = useState("")
   const [newHardwareUsed, setNewHardwareUsed] = useState("")
   const [newHardwareStillRequired, setNewHardwareStillRequired] = useState("")
   const [newRodName, setNewRodName] = useState("")
   const [newRodLength, setNewRodLength] = useState("")
+  const [newChecklistName, setNewChecklistName] = useState("")
+  const [newChecklistDescription, setNewChecklistDescription] = useState("")
+  const [showNewChecklistForm, setShowNewChecklistForm] = useState(false)
+  const [newItemName, setNewItemName] = useState<Record<number, string>>({})
+  const [newItemDescription, setNewItemDescription] = useState<Record<number, string>>({})
 
-  const [showImportDialog, setShowImportDialog] = useState(false)
-  const [importCategory, setImportCategory] = useState<"sheets" | "hardware" | "rods">("sheets")
-  const [isUploading, setIsUploading] = useState(false)
+  const { data: supplies = [] } = useQuery<Supply[]>({
+    queryKey: ["supplies"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/supplies")
+      return res.json()
+    },
+  })
 
-  // WebSocket for real-time updates
-  const handleWebSocketMessage = (message: MessageEvent) => {
-    if (!open || !job) return
+  const { data: jobSheets = [] } = useQuery<JobSheet[]>({
+    queryKey: ["jobSheets", job?.id],
+    enabled: !!job,
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/jobs/${job?.id}/sheets`)
+      return res.json()
+    },
+  })
+
+  const { data: jobHardware = [] } = useQuery<JobHardware[]>({
+    queryKey: ["jobHardware", job?.id],
+    enabled: !!job,
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/jobs/${job?.id}/hardware`)
+      return res.json()
+    },
+  })
+
+  const { data: jobRods = [] } = useQuery<JobRod[]>({
+    queryKey: ["jobRods", job?.id],
+    enabled: !!job,
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/jobs/${job?.id}/rods`)
+      return res.json()
+    },
+  })
+
+  const { data: jobChecklists = [] } = useQuery<PartChecklist[]>({
+    queryKey: ["jobChecklists", job?.id],
+    enabled: !!job,
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/jobs/${job?.id}/checklists`)
+      return res.json()
+    },
+  })
+
+  // State for checklist items
+  const [checklistItems, setChecklistItems] = useState<Record<number, PartChecklistItem[]>>({})
+
+  // Fetch checklist items for each checklist
+  useEffect(() => {
+    if (jobChecklists && jobChecklists.length > 0) {
+      const fetchItems = async () => {
+        const items: Record<number, PartChecklistItem[]> = {}
+        for (const checklist of jobChecklists) {
+          try {
+            const res = await apiRequest("GET", `/api/part-checklists/${checklist.id}`)
+            const data = await res.json()
+            items[checklist.id] = data.items || []
+          } catch (error) {
+            console.error(`Error fetching items for checklist ${checklist.id}:`, error)
+            items[checklist.id] = []
+          }
+        }
+        setChecklistItems(items)
+      }
+      fetchItems()
+    }
+  }, [jobChecklists])
+
+  useEffect(() => {
+    if (job) {
+      setLocalJob(job)
+    }
+  }, [job])
+
+  const handleCreateChecklist = useCallback(async () => {
+    if (!newChecklistName?.trim() || !job) {
+      toast({ title: "Error", description: "Please enter a checklist name" })
+      return
+    }
 
     try {
-      const data = JSON.parse(message.data)
-      const { type } = data
-
-      // Handle real-time updates for this specific job
-      if (type === "job_timer_started" && data?.jobId === job.id) {
-        queryClient.invalidateQueries({ queryKey: [`/api/jobs/${job.id}`] })
-      }
-
-      if (type === "job_timer_stopped" && data?.jobId === job.id) {
-        queryClient.invalidateQueries({ queryKey: [`/api/jobs/${job.id}`] })
-      }
-
-      if (type === "sheet_status_updated" || type === "recut_sheet_status_updated") {
-        // Refresh job data and recut entries
-        queryClient.invalidateQueries({ queryKey: [`/api/jobs/${job.id}`] })
-        queryClient.invalidateQueries({ queryKey: ["/api/jobs"] })
-
-        // Refresh recut data for affected materials
-        if (job.cutlists) {
-          job.cutlists.forEach((cutlist) => {
-            cutlist.materials?.forEach((material) => {
-              queryClient.invalidateQueries({ queryKey: [`/api/materials/${material.id}/recuts`] })
-            })
-          })
-        }
-      }
-
-      if (type === "recut_added" || type === "material_updated") {
-        queryClient.invalidateQueries({ queryKey: [`/api/jobs/${job.id}`] })
-        queryClient.invalidateQueries({ queryKey: ["/api/jobs"] })
-      }
-    } catch (error) {
-      console.error("Failed to parse WebSocket message:", error)
-    }
-  }
-
-  useWebSocket("/ws", handleWebSocketMessage)
-
-  // Fetch colors for adding materials
-  const { data: colors = [] } = useQuery<ColorWithGroup[]>({
-    queryKey: ["/api/colors"],
-  })
-
-  const { data: fetchedJobSheets = [] } = useQuery<JobSheet[]>({
-    queryKey: [`/api/jobs/${job?.id}/sheets`],
-    enabled: !!job?.id && open,
-  })
-
-  const { data: fetchedJobHardware = [] } = useQuery<JobHardware[]>({
-    queryKey: [`/api/jobs/${job?.id}/hardware`],
-    enabled: !!job?.id && open,
-  })
-
-  const { data: fetchedJobRods = [] } = useQuery<JobRod[]>({
-    queryKey: [`/api/jobs/${job?.id}/rods`],
-    enabled: !!job?.id && open,
-  })
-
-  const addJobSheetMutation = useMutation({
-    mutationFn: ({ jobId, materialType, qty }: { jobId: number; materialType: string; qty: number }) =>
-      apiRequest("POST", `/api/jobs/${jobId}/sheets`, { materialType, qty }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${job?.id}/sheets`] })
-      setNewSheetMaterial("")
-      setNewSheetQty("")
-      toast({ title: "Success", description: "Sheet added successfully" })
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to add sheet" })
-    },
-  })
-
-  const addJobHardwareMutation = useMutation({
-    mutationFn: ({
-      jobId,
-      hardwareName,
-      qty,
-      onHandQty,
-      needed,
-      used,
-      stillRequired,
-    }: {
-      jobId: number
-      hardwareName: string
-      qty: number
-      onHandQty: number
-      needed: number
-      used: number
-      stillRequired: number
-    }) =>
-      apiRequest("POST", `/api/jobs/${jobId}/hardware`, { hardwareName, qty, onHandQty, needed, used, stillRequired }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${job?.id}/hardware`] })
-      setNewHardwareName("")
-      setNewHardwareQty("")
-      setNewHardwareOnHand("")
-      setNewHardwareNeeded("")
-      setNewHardwareUsed("")
-      setNewHardwareStillRequired("")
-      toast({ title: "Success", description: "Hardware added successfully" })
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to add hardware" })
-    },
-  })
-
-  const addJobRodMutation = useMutation({
-    mutationFn: ({ jobId, rodName, lengthInches }: { jobId: number; rodName: string; lengthInches: string }) =>
-      apiRequest("POST", `/api/jobs/${jobId}/rods`, { rodName, lengthInches }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${job?.id}/rods`] })
-      setNewRodName("")
-      setNewRodLength("")
-      toast({ title: "Success", description: "Rod added successfully" })
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to add rod" })
-    },
-  })
-
-  const importFileMutation = useMutation({
-    mutationFn: ({ jobId, file, category }: { jobId: number; file: File; category: string }) => {
-      const formData = new FormData()
-      formData.append("importFile", file)
-      formData.append("category", category)
-
-      return fetch(`/api/jobs/${jobId}/import`, {
-        method: "POST",
-        body: formData,
-      }).then((res) => res.json())
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${job?.id}/sheets`] })
-      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${job?.id}/hardware`] })
-      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${job?.id}/rods`] })
-      setShowImportDialog(false)
-      setIsUploading(false)
-      toast({
-        title: "Import Complete",
-        description: `Imported ${data.imported} items${data.errors.length > 0 ? ` with ${data.errors.length} errors` : ""}`,
+      const response = await apiRequest("POST", "/api/part-checklists", {
+        name: newChecklistName.trim(),
+        description: newChecklistDescription?.trim() || "",
+        jobId: job.id,
+        isTemplate: false,
       })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Unknown error" }))
+        throw new Error(errorData.message || "Failed to create checklist")
+      }
+
+      const newChecklist = await response.json()
+
+      // Update the query cache
+      queryClient.setQueryData<PartChecklist[]>(["jobChecklists", job.id], (oldData) => {
+        if (!oldData) return [newChecklist]
+        return [...oldData, newChecklist]
+      })
+
+      // Reset form
+      setNewChecklistName("")
+      setNewChecklistDescription("")
+      setShowNewChecklistForm(false)
+
+      toast({ title: "Success", description: "Checklist created successfully" })
+    } catch (error) {
+      console.error("Error creating checklist:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create checklist",
+      })
+    }
+  }, [newChecklistName, newChecklistDescription, job, queryClient, toast])
+
+  const handleAddItem = useCallback(
+    async (checklistId: number) => {
+      const itemName = newItemName[checklistId]?.trim()
+      if (!itemName) {
+        toast({ title: "Error", description: "Please enter an item name" })
+        return
+      }
+
+      try {
+        const response = await apiRequest("POST", `/api/part-checklists/${checklistId}/items`, {
+          name: itemName,
+          description: newItemDescription[checklistId]?.trim() || "",
+          category: "general",
+          sortOrder: (checklistItems[checklistId]?.length || 0) + 1, // Set proper sort order
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ message: "Unknown error" }))
+          throw new Error(errorData.message || "Failed to add item")
+        }
+
+        const newItem = await response.json()
+
+        // Update the checklist items state
+        setChecklistItems((prev) => ({
+          ...prev,
+          [checklistId]: [...(prev[checklistId] || []), newItem],
+        }))
+
+        // Reset form for this checklist
+        setNewItemName((prev) => ({ ...prev, [checklistId]: "" }))
+        setNewItemDescription((prev) => ({ ...prev, [checklistId]: "" }))
+
+        toast({ title: "Success", description: "Item added successfully" })
+      } catch (error) {
+        console.error("Error adding item:", error)
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to add item",
+        })
+      }
     },
-    onError: () => {
-      setIsUploading(false)
-      toast({ title: "Error", description: "Failed to import file" })
-    },
-  })
-
-  useEffect(() => {
-    setJobSheets(fetchedJobSheets)
-  }, [fetchedJobSheets])
-
-  useEffect(() => {
-    setJobHardware(fetchedJobHardware)
-  }, [fetchedJobHardware])
-
-  useEffect(() => {
-    setJobRods(fetchedJobRods)
-  }, [fetchedJobRods])
-
-  // Group colors by group for the add material dialog
-  const groupedColors = colors.reduce(
-    (acc, color) => {
-      const groupName = color.group?.name || "Ungrouped"
-      if (!acc[groupName]) acc[groupName] = []
-      acc[groupName].push(color)
-      return acc
-    },
-    {} as Record<string, ColorWithGroup[]>,
+    [newItemName, newItemDescription, checklistItems, toast],
   )
 
-  // State for adding new sheets
-  const [newSheetsCount, setNewSheetsCount] = useState<string>("")
-
-  // State for recut entry
-  const [recutDialog, setRecutDialog] = useState<{ open: boolean; materialId: number | null }>({
-    open: false,
-    materialId: null,
-  })
-  const [recutQuantity, setRecutQuantity] = useState<string>("1")
-  const [recutReason, setRecutReason] = useState<string>("")
-
-  // State for adding new materials (colors)
-  const [addMaterialDialog, setAddMaterialDialog] = useState<boolean>(false)
-  const [newMaterialColorId, setNewMaterialColorId] = useState<string>("0")
-  const [newMaterialSheets, setNewMaterialSheets] = useState<string>("1")
-
-  // Force re-render counter
-  const [updateCounter, setUpdateCounter] = useState(0)
-
-  // Automatic timer management
-  const startTimerMutation = useMutation({
-    mutationFn: (jobId: number) => apiRequest("POST", `/api/jobs/${jobId}/start-timer`),
-    onError: () => {
-      console.error("Failed to start job timer")
-    },
-  })
-
-  const stopTimerMutation = useMutation({
-    mutationFn: (jobId: number) => apiRequest("POST", `/api/jobs/${jobId}/stop-timer`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] })
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] })
-    },
-    onError: () => {
-      console.error("Failed to stop job timer")
-    },
-  })
-
-  // Auto-refresh job data every 5 seconds when modal is open
-  useEffect(() => {
-    if (!open || !job?.id) return
-
-    const interval = setInterval(() => {
-      queryClient.invalidateQueries({ queryKey: [`/api/jobs/${job.id}`] })
-    }, 5000)
-
-    return () => clearInterval(interval)
-  }, [open, job?.id, queryClient])
-
-  // Live timer updates every second
-  useEffect(() => {
-    if (!open || !timerStartTime) return
-
-    const interval = setInterval(() => {
-      const now = new Date()
-      const elapsedSeconds = Math.floor((now.getTime() - timerStartTime.getTime()) / 1000)
-      setLiveTimerSeconds(elapsedSeconds)
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [open, timerStartTime])
-
-  // Start/stop timer when modal opens/closes (only if NOT in view-only mode)
-  useEffect(() => {
-    if (open && job?.id && !viewOnlyMode) {
-      const startTime = new Date()
-      setTimerStartTime(startTime)
-      setLiveTimerSeconds(0)
-      startTimerMutation.mutate(job.id)
-    }
-
-    // Stop timer when modal closes (only if timer was started)
-    return () => {
-      if (job?.id && !viewOnlyMode) {
-        stopTimerMutation.mutate(job.id)
-        setTimerStartTime(null)
-        setLiveTimerSeconds(0)
-      }
-    }
-  }, [open, job?.id, viewOnlyMode])
-
-  // Clear state when modal closes
-  useEffect(() => {
-    if (!open) {
-      setNewSheetsCount("")
-    }
-  }, [open])
-
-  const updateSheetStatusMutation = useMutation({
-    mutationFn: ({ materialId, sheetIndex, status }: { materialId: number; sheetIndex: number; status: string }) =>
-      apiRequest("PUT", `/api/materials/${materialId}/sheet-status`, { sheetIndex, status }),
-    onMutate: ({ materialId, sheetIndex, status }) => {
-      // Set loading state based on action type
-      if (status === "cut") {
-        setLoadingCutButtons((prev) => ({
-          ...prev,
-          [materialId]: new Set([...Array.from(prev[materialId] || []), sheetIndex]),
-        }))
-      } else if (status === "skip") {
-        setLoadingSkipButtons((prev) => ({
-          ...prev,
-          [materialId]: new Set([...Array.from(prev[materialId] || []), sheetIndex]),
-        }))
-      }
-
-      // Immediately update the UI optimistically
-      setOptimisticSheetStatuses((prev) => ({
-        ...prev,
-        [materialId]: {
-          ...prev[materialId],
-          [sheetIndex]: status,
-        },
-      }))
-
-      // Return context for rollback if needed
-      return {
-        materialId,
-        sheetIndex,
-        previousStatus: optimisticSheetStatuses[materialId]?.[sheetIndex],
-        action: status,
-      }
-    },
-    onSuccess: (_, variables) => {
-      // Clear loading state based on action type
-      if (variables.status === "cut") {
-        setLoadingCutButtons((prev) => ({
-          ...prev,
-          [variables.materialId]: new Set(
-            Array.from(prev[variables.materialId] || []).filter((i) => i !== variables.sheetIndex),
-          ),
-        }))
-      } else if (variables.status === "skip") {
-        setLoadingSkipButtons((prev) => ({
-          ...prev,
-          [variables.materialId]: new Set(
-            Array.from(prev[variables.materialId] || []).filter((i) => i !== variables.sheetIndex),
-          ),
-        }))
-      }
-
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] })
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] })
-    },
-    onError: (error, variables, context) => {
-      // Clear loading state based on action type
-      if (variables.status === "cut") {
-        setLoadingCutButtons((prev) => ({
-          ...prev,
-          [variables.materialId]: new Set(
-            Array.from(prev[variables.materialId] || []).filter((i) => i !== variables.sheetIndex),
-          ),
-        }))
-      } else if (variables.status === "skip") {
-        setLoadingSkipButtons((prev) => ({
-          ...prev,
-          [variables.materialId]: new Set(
-            Array.from(prev[variables.materialId] || []).filter((i) => i !== variables.sheetIndex),
-          ),
-        }))
-      }
-
-      // Rollback optimistic update on error
-      if (context) {
-        setOptimisticSheetStatuses((prev) => ({
-          ...prev,
-          [context.materialId]: {
-            ...prev[context.materialId],
-            [context.sheetIndex]: context.previousStatus || "pending",
-          },
-        }))
-      }
-
-      toast({ title: "Error", description: "Failed to update sheet status" })
-    },
-  })
-
-  const addSheetsMutation = useMutation({
-    mutationFn: ({
-      materialId,
-      additionalSheets,
-      isRecut,
-    }: { materialId: number; additionalSheets: number; isRecut?: boolean }) =>
-      apiRequest("POST", `/api/materials/${materialId}/add-sheets`, { additionalSheets, isRecut }),
-    onSuccess: async () => {
-      // Force immediate refetch with aggressive cache busting
-      await queryClient.invalidateQueries({ queryKey: ["/api/jobs"] })
-      await queryClient.refetchQueries({ queryKey: ["/api/jobs"] })
-
-      // Force component re-render
-      setUpdateCounter((prev) => prev + 1)
-
-      setNewSheetsCount("")
-      toast({ title: "Success", description: "Sheets added successfully" })
-    },
-    onError: (error) => {
-      console.error("Add sheets error:", error)
-      toast({ title: "Error", description: "Failed to add additional sheets" })
-    },
-  })
-
-  const deleteSheetMutation = useMutation({
-    mutationFn: ({ materialId, sheetIndex }: { materialId: number; sheetIndex: number }) =>
-      apiRequest("DELETE", `/api/materials/${materialId}/sheet/${sheetIndex}`),
-    onSuccess: async () => {
-      console.log("Delete successful, refreshing data...")
-
-      // Force immediate refetch with aggressive cache busting
-      await queryClient.invalidateQueries({ queryKey: ["/api/jobs"] })
-      await queryClient.refetchQueries({ queryKey: ["/api/jobs"] })
-
-      // Force component re-render
-      setUpdateCounter((prev) => prev + 1)
-
-      console.log("Data refresh complete")
-      toast({ title: "Success", description: "Sheet deleted and sequence updated" })
-    },
-    onError: (error) => {
-      console.error("Delete sheet error:", error)
-      toast({ title: "Error", description: "Failed to delete sheet" })
-    },
-  })
-
-  const deleteCutlistMutation = useMutation({
-    mutationFn: (cutlistId: number) => apiRequest("DELETE", `/api/cutlists/${cutlistId}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] })
-      toast({ title: "Success", description: "Cutlist deleted successfully" })
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to delete cutlist" })
-    },
-  })
-
-  const addRecutMutation = useMutation({
-    mutationFn: ({ materialId, quantity, reason }: { materialId: number; quantity: number; reason?: string }) =>
-      apiRequest("POST", `/api/materials/${materialId}/recuts`, { quantity, reason }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] })
-      queryClient.invalidateQueries({ queryKey: [`/api/materials/${recutDialog.materialId}/recuts`] })
-      setRecutDialog({ open: false, materialId: null })
-      setRecutQuantity("1")
-      setRecutReason("")
-      toast({ title: "Success", description: "Recut entry added successfully" })
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to add recut entry" })
-    },
-  })
-
-  const addMaterialMutation = useMutation({
-    mutationFn: ({ jobId, colorId, totalSheets }: { jobId: number; colorId: number; totalSheets: number }) =>
-      apiRequest("POST", `/api/jobs/${jobId}/materials`, { colorId, totalSheets }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] })
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] })
-      setAddMaterialDialog(false)
-      setNewMaterialColorId("0")
-      setNewMaterialSheets("1")
-      toast({ title: "Success", description: "Material added to job successfully" })
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to add material to job" })
-    },
-  })
-
-  const deleteMaterialMutation = useMutation({
-    mutationFn: (materialId: number) => apiRequest("DELETE", `/api/materials/${materialId}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] })
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] })
-      toast({ title: "Success", description: "Material deleted successfully" })
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to delete material" })
-    },
-  })
-
-  // Calculate totals across all cutlists including recuts
-  const [totalSheets, completedSheets, skippedSheets] = useMemo(() => {
-    if (!job) return [0, 0, 0]
-
-    let total = 0
-    let completed = 0
-    let skipped = 0
-
-    job.cutlists?.forEach((cutlist) => {
-      cutlist.materials?.forEach((m) => {
-        const sheetStatuses = m.sheetStatuses || []
-
-        // Count cut and skipped sheets for original materials
-        const cutCount = sheetStatuses.filter((status) => status === "cut").length
-        const skipCount = sheetStatuses.filter((status) => status === "skip").length
-
-        total += m.totalSheets
-        completed += cutCount
-        skipped += skipCount
-
-        // Add recut sheets to the total calculation
-        m.recutEntries?.forEach((recut) => {
-          const recutStatuses = recut.sheetStatuses || []
-          const recutCutCount = recutStatuses.filter((status) => status === "cut").length
-          const recutSkipCount = recutStatuses.filter((status) => status === "skip").length
-
-          total += recut.quantity
-          completed += recutCutCount
-          skipped += recutSkipCount
+  const handleToggleItem = useCallback(
+    async (itemId: number, isCompleted: boolean, checklistId: number) => {
+      try {
+        const response = await apiRequest("PATCH", `/api/part-checklists/items/${itemId}`, {
+          isCompleted: !isCompleted,
         })
-      })
-    })
 
-    return [total, completed, skipped]
-  }, [job, job?.cutlists])
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ message: "Unknown error" }))
+          throw new Error(errorData.message || "Failed to update item")
+        }
 
-  // Progress calculation including recuts
-  const effectiveTotalSheets = totalSheets - skippedSheets
-  const progress = effectiveTotalSheets > 0 ? Math.round((completedSheets / effectiveTotalSheets) * 100) : 0
+        // Update the checklist items state
+        setChecklistItems((prev) => ({
+          ...prev,
+          [checklistId]: (prev[checklistId] || []).map((item) =>
+            item.id === itemId
+              ? { ...item, isCompleted: !isCompleted, completedAt: !isCompleted ? new Date().toISOString() : null }
+              : item,
+          ),
+        }))
 
-  if (!job) return null
+        queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] })
+        queryClient.invalidateQueries({ queryKey: ["/api/jobs"] })
 
-  const getStatusBadgeColor = (status: string) => {
-    switch (status) {
-      case "waiting":
-        return "bg-gray-100 text-gray-600"
-      case "in_progress":
-        return "bg-orange-100 text-orange-600"
-      case "paused":
-        return "bg-yellow-100 text-yellow-600"
-      case "done":
-        return "bg-green-100 text-green-600"
-      default:
-        return "bg-gray-100 text-gray-600"
-    }
-  }
-
-  const formatDuration = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600)
-    const minutes = Math.floor((seconds % 3600) / 60)
-    const secs = seconds % 60
-
-    if (hours > 0) {
-      return `${hours}h ${minutes}m ${secs}s`
-    } else if (minutes > 0) {
-      return `${minutes}m ${secs}s`
-    } else {
-      return `${secs}s`
-    }
-  }
-
-  // Calculate total duration including live timer
-  const currentDuration = () => {
-    const baseDuration = job?.totalDuration || 0
-    return baseDuration + liveTimerSeconds
-  }
-
-  // Handle sheet cut - with optimistic updates
-  const handleSheetCut = (materialId: number, sheetIndex: number) => {
-    // Find material across all cutlists
-    let material = null
-    if (job?.cutlists) {
-      for (const cutlist of job.cutlists) {
-        material = cutlist.materials?.find((m) => m.id === materialId)
-        if (material) break
+        toast({ title: "Success", description: "Item updated successfully" })
+      } catch (error) {
+        console.error("Error updating item:", error)
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to update item",
+        })
       }
-    }
-    if (!material) return
+    },
+    [queryClient, toast],
+  )
 
-    // Get the current status (optimistic or server)
-    const optimisticStatus = optimisticSheetStatuses[materialId]?.[sheetIndex]
-    const serverStatuses = material.sheetStatuses || []
-    const serverStatus = serverStatuses[sheetIndex] || "pending"
-    const currentStatus = optimisticStatus !== undefined ? optimisticStatus : serverStatus
+  const handleDeleteItem = useCallback(
+    async (itemId: number, checklistId: number) => {
+      try {
+        await apiRequest("DELETE", `/api/part-checklists/items/${itemId}`)
 
-    const newStatus = currentStatus === "cut" ? "pending" : "cut"
-    updateSheetStatusMutation.mutate({ materialId, sheetIndex, status: newStatus })
-  }
+        // Update the checklist items state
+        setChecklistItems((prev) => ({
+          ...prev,
+          [checklistId]: (prev[checklistId] || []).filter((item) => item.id !== itemId),
+        }))
 
-  // Handle sheet skip - with optimistic updates
-  const handleSheetSkip = (materialId: number, sheetIndex: number) => {
-    // Find material across all cutlists
-    let material = null
-    if (job?.cutlists) {
-      for (const cutlist of job.cutlists) {
-        material = cutlist.materials?.find((m) => m.id === materialId)
-        if (material) break
+        toast({ title: "Success", description: "Item deleted successfully" })
+      } catch (error) {
+        console.error("Error deleting item:", error)
+        toast({ title: "Error", description: "Failed to delete item", variant: "destructive" })
       }
+    },
+    [toast],
+  )
+
+  const handleDeleteChecklist = useCallback(
+    async (checklistId: number) => {
+      if (!job) return
+      try {
+        await apiRequest("DELETE", `/api/part-checklists/${checklistId}`)
+        queryClient.setQueryData<PartChecklist[]>(["jobChecklists", job.id], (oldData) =>
+          oldData ? oldData.filter((c) => c.id !== checklistId) : [],
+        )
+        toast({ title: "Success", description: "Checklist deleted successfully" })
+      } catch (error) {
+        console.error("Error deleting checklist:", error)
+        toast({ title: "Error", description: "Failed to delete checklist", variant: "destructive" })
+      }
+    },
+    [job, queryClient, toast],
+  )
+
+  useWebSocket(
+    "/ws",
+    useCallback(
+      (message) => {
+        if (message.type === "job_updated" && message.data.id === job?.id) {
+          setLocalJob(message.data)
+          queryClient.invalidateQueries({ queryKey: ["jobs"] })
+        }
+      },
+      [job?.id, queryClient],
+    ),
+  )
+
+  const handleStartJob = useCallback(async () => {
+    try {
+      await apiRequest("POST", `/api/jobs/${job?.id}/start`, {})
+      toast({ title: "Success", description: "Job started successfully" })
+      queryClient.invalidateQueries({ queryKey: ["jobs"] })
+    } catch {
+      toast({ title: "Error", description: "Failed to start job" })
     }
-    if (!material) return
+  }, [job?.id, queryClient, toast])
 
-    // Get the current status (optimistic or server)
-    const optimisticStatus = optimisticSheetStatuses[materialId]?.[sheetIndex]
-    const serverStatuses = material.sheetStatuses || []
-    const serverStatus = serverStatuses[sheetIndex] || "pending"
-    const currentStatus = optimisticStatus !== undefined ? optimisticStatus : serverStatus
+  const handlePauseJob = useCallback(async () => {
+    try {
+      await apiRequest("POST", `/api/jobs/${job?.id}/pause`, {})
+      toast({ title: "Success", description: "Job paused successfully" })
+      queryClient.invalidateQueries({ queryKey: ["jobs"] })
+    } catch {
+      toast({ title: "Error", description: "Failed to pause job" })
+    }
+  }, [job?.id, queryClient, toast])
 
-    const newStatus = currentStatus === "skip" ? "pending" : "skip"
-    updateSheetStatusMutation.mutate({ materialId, sheetIndex, status: newStatus })
-  }
+  const handleResumeJob = useCallback(async () => {
+    try {
+      await apiRequest("POST", `/api/jobs/${job?.id}/resume`, {})
+      toast({ title: "Success", description: "Job resumed successfully" })
+      queryClient.invalidateQueries({ queryKey: ["jobs"] })
+    } catch {
+      toast({ title: "Error", description: "Failed to resume job" })
+    }
+  }, [job?.id, queryClient, toast])
 
-  const handleAddSheets = (materialId: number) => {
-    const count = Number.parseInt(newSheetsCount)
-    if (!count || count < 1) {
-      toast({ title: "Error", description: "Please enter a valid number of sheets" })
+  const handleCompleteJob = useCallback(async () => {
+    try {
+      await apiRequest("POST", `/api/jobs/${job?.id}/complete`, {})
+      toast({ title: "Success", description: "Job completed successfully" })
+      queryClient.invalidateQueries({ queryKey: ["jobs"] })
+      onOpenChange(false)
+    } catch {
+      toast({ title: "Error", description: "Failed to complete job" })
+    }
+  }, [job?.id, onOpenChange, queryClient, toast])
+
+  const handleDeleteSheet = useCallback(
+    async (sheetId: number) => {
+      try {
+        await apiRequest("DELETE", `/api/jobs/${job?.id}/sheets/${sheetId}`)
+        toast({ title: "Success", description: "Sheet deleted successfully" })
+        queryClient.invalidateQueries({ queryKey: ["jobSheets", job?.id] })
+      } catch {
+        toast({ title: "Error", description: "Failed to delete sheet" })
+      }
+    },
+    [job?.id, queryClient, toast],
+  )
+
+  const handleDeleteHardware = useCallback(
+    async (hardwareId: number) => {
+      try {
+        await apiRequest("DELETE", `/api/jobs/${job?.id}/hardware/${hardwareId}`)
+        toast({ title: "Success", description: "Hardware deleted successfully" })
+        queryClient.invalidateQueries({ queryKey: ["jobHardware", job?.id] })
+      } catch {
+        toast({ title: "Error", description: "Failed to delete hardware" })
+      }
+    },
+    [job?.id, queryClient, toast],
+  )
+
+  const handleDeleteRod = useCallback(
+    async (rodId: number) => {
+      try {
+        await apiRequest("DELETE", `/api/jobs/${job?.id}/rods/${rodId}`)
+        toast({ title: "Success", description: "Rod deleted successfully" })
+        queryClient.invalidateQueries({ queryKey: ["jobRods", job?.id] })
+      } catch {
+        toast({ title: "Error", description: "Failed to delete rod" })
+      }
+    },
+    [job?.id, queryClient, toast],
+  )
+
+  const handleAddSheet = useCallback(async () => {
+    if (!newSheetMaterialType?.trim() || !newSheetQty) {
+      toast({ title: "Error", description: "Please fill in both material type and quantity" })
       return
     }
-    addSheetsMutation.mutate({ materialId, additionalSheets: count })
-  }
 
-  const handleAddRecut = (materialId: number) => {
-    setRecutDialog({ open: true, materialId })
-  }
-
-  const handleConfirmRecut = () => {
-    const quantity = Number.parseInt(recutQuantity)
-    if (!quantity || quantity < 1) {
-      toast({ title: "Error", description: "Please enter a valid quantity" })
+    const qty = Number.parseInt(newSheetQty)
+    if (isNaN(qty) || qty <= 0) {
+      toast({ title: "Error", description: "Please enter a valid quantity greater than 0" })
       return
     }
-    if (recutDialog.materialId) {
-      addRecutMutation.mutate({
-        materialId: recutDialog.materialId,
-        quantity,
-        reason: recutReason.trim() || undefined,
+
+    try {
+      const response = await apiRequest("POST", `/api/jobs/${job?.id}/sheets`, {
+        materialType: newSheetMaterialType.trim(),
+        qty: qty,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Unknown error" }))
+        throw new Error(errorData.message || "Failed to add sheet")
+      }
+
+      toast({ title: "Success", description: "Sheet added successfully" })
+      queryClient.invalidateQueries({ queryKey: ["jobSheets", job?.id] })
+      setNewSheetMaterialType("")
+      setNewSheetQty("")
+    } catch (error) {
+      console.error("Error adding sheet:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to add sheet",
       })
     }
-  }
+  }, [job?.id, newSheetMaterialType, newSheetQty, queryClient, toast])
 
-  const handleDeleteCutlist = (cutlistId: number) => {
-    if (confirm("Are you sure you want to delete this cutlist? This will also delete all materials in it.")) {
-      deleteCutlistMutation.mutate(cutlistId)
-    }
-  }
-
-  const handleAddMaterial = () => {
-    const colorId = Number.parseInt(newMaterialColorId)
-    const totalSheets = Number.parseInt(newMaterialSheets)
-
-    if (!colorId || colorId === 0) {
-      toast({ title: "Error", description: "Please select a color" })
+  const handleAddHardware = useCallback(async () => {
+    if (!newHardwareSupplyId || !newHardwareAllocated) {
+      toast({ title: "Error", description: "Please fill in required fields (Supply and Allocated quantity)" })
       return
     }
 
-    if (!totalSheets || totalSheets < 1) {
-      toast({ title: "Error", description: "Please enter a valid number of sheets" })
+    const selectedSupply = supplies.find((s) => s.id === Number.parseInt(newHardwareSupplyId))
+    if (!selectedSupply) {
+      toast({ title: "Error", description: "Please select a valid hardware item" })
       return
     }
 
-    if (job?.id) {
-      addMaterialMutation.mutate({ jobId: job.id, colorId, totalSheets })
-    }
-  }
-
-  const handleAddSheet = () => {
-    if (!newSheetMaterial.trim() || !newSheetQty || Number.parseInt(newSheetQty) < 1) {
-      toast({ title: "Error", description: "Please enter valid material type and quantity" })
-      return
-    }
-    if (job?.id) {
-      addJobSheetMutation.mutate({
-        jobId: job.id,
-        materialType: newSheetMaterial.trim(),
-        qty: Number.parseInt(newSheetQty),
-      })
-    }
-  }
-
-  const handleAddHardware = () => {
-    if (!newHardwareName.trim()) {
-      toast({ title: "Error", description: "Please enter hardware name" })
-      return
-    }
-    if (job?.id) {
-      addJobHardwareMutation.mutate({
-        jobId: job.id,
-        hardwareName: newHardwareName.trim(),
-        qty: Number.parseInt(newHardwareQty) || 0,
-        onHandQty: Number.parseInt(newHardwareOnHand) || 0,
-        needed: Number.parseInt(newHardwareNeeded) || 0,
+    try {
+      const response = await apiRequest("POST", `/api/jobs/${job?.id}/hardware`, {
+        supplyId: Number.parseInt(newHardwareSupplyId),
+        allocated: Number.parseInt(newHardwareAllocated) || 0,
         used: Number.parseInt(newHardwareUsed) || 0,
         stillRequired: Number.parseInt(newHardwareStillRequired) || 0,
       })
-    }
-  }
 
-  const handleAddRod = () => {
-    if (!newRodName.trim() || !newRodLength.trim()) {
-      toast({ title: "Error", description: "Please enter rod name and length" })
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Unknown error" }))
+        throw new Error(errorData.message || "Failed to add hardware")
+      }
+
+      toast({ title: "Success", description: "Hardware added successfully" })
+      queryClient.invalidateQueries({ queryKey: ["jobHardware", job?.id] })
+      setNewHardwareSupplyId("")
+      setNewHardwareAllocated("")
+      setNewHardwareUsed("")
+      setNewHardwareStillRequired("")
+    } catch (error) {
+      console.error("Error adding hardware:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to add hardware",
+      })
+    }
+  }, [
+    job?.id,
+    newHardwareSupplyId,
+    newHardwareAllocated,
+    newHardwareUsed,
+    newHardwareStillRequired,
+    queryClient,
+    supplies,
+    toast,
+  ])
+
+  const handleAddRod = useCallback(async () => {
+    if (!newRodName?.trim() || !newRodLength?.trim()) {
+      toast({ title: "Error", description: "Please fill in both rod name and length" })
       return
     }
-    if (job?.id) {
-      addJobRodMutation.mutate({
-        jobId: job.id,
+
+    try {
+      const response = await apiRequest("POST", `/api/jobs/${job?.id}/rods`, {
         rodName: newRodName.trim(),
         lengthInches: newRodLength.trim(),
       })
-    }
-  }
 
-  const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file && job?.id) {
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Unknown error" }))
+        throw new Error(errorData.message || "Failed to add rod")
+      }
+
+      toast({ title: "Success", description: "Rod added successfully" })
+      queryClient.invalidateQueries({ queryKey: ["jobRods", job?.id] })
+      setNewRodName("")
+      setNewRodLength("")
+    } catch (error) {
+      console.error("Error adding rod:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to add rod",
+      })
+    }
+  }, [job?.id, newRodLength, newRodName, queryClient, toast])
+
+  const handleFileImport = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      if (!file) return
+
+      const allowedTypes = [".csv", ".xlsx", ".xls"]
+      const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf("."))
+      if (!allowedTypes.includes(fileExtension)) {
+        toast({ title: "Error", description: "Please select a CSV or Excel file" })
+        return
+      }
+
       setIsUploading(true)
-      importFileMutation.mutate({ jobId: job.id, file, category: importCategory })
+      const formData = new FormData()
+      formData.append("file", file) // Changed from "importFile" to "file" to match server expectations
+      formData.append("category", importCategory)
+
+      try {
+        const res = await apiRequest("POST", `/api/jobs/${job?.id}/import`, formData)
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({ message: "Import failed" }))
+          throw new Error(errorData.message || "Import failed")
+        }
+
+        const data = await res.json()
+        toast({
+          title: "Import Complete",
+          description: `${data.imported} items imported successfully`,
+        })
+
+        const queryKey =
+          importCategory === "sheets" ? "jobSheets" : importCategory === "hardware" ? "jobHardware" : "jobRods"
+        queryClient.invalidateQueries({ queryKey: [queryKey, job?.id] })
+
+        setShowImportDialog(false)
+      } catch (error) {
+        console.error("Import error:", error)
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to import file",
+        })
+      } finally {
+        setIsUploading(false)
+        // Reset file input
+        e.target.value = ""
+      }
+    },
+    [importCategory, job?.id, queryClient, toast],
+  )
+
+  if (!job) return null
+
+  const isWaiting = job.status === "waiting"
+  const isInProgress = job.status === "in_progress"
+  const isPaused = job.status === "paused"
+  const isDone = job.status === "done"
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "done":
+        return "bg-green-100 text-green-800 border-green-200"
+      case "in_progress":
+        return "bg-blue-100 text-blue-800 border-blue-200"
+      case "waiting":
+        return "bg-yellow-100 text-yellow-800 border-yellow-200"
+      case "paused":
+        return "bg-red-100 text-red-800 border-red-200"
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200"
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl min-h-[80vh] max-h-[90vh] overflow-y-auto p-6">
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {job?.jobNumber} - {job?.customerName}
-              {viewOnlyMode && (
-                <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                  View Only
-                </Badge>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowImportDialog(true)}
-                className="bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
-              >
-                <Upload className="w-4 h-4 mr-1" />
-                Import
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (job?.id) {
-                    const popupUrl = `${window.location.origin}/popup/${job.id}`
-                    const popup = window.open(
-                      popupUrl,
-                      `job-popup-${job.id}`,
-                      "width=500,height=600,resizable=yes,scrollbars=yes,status=no,toolbar=no,menubar=no,location=no,top=100,left=100",
-                    )
-
-                    if (popup) {
-                      popup.focus()
-                    }
-                  }
-                }}
-              >
-                <Maximize2 className="w-4 h-4 mr-1" />
-                Pop Out
-              </Button>
-            </div>
+          <DialogTitle className="text-2xl font-bold text-blue-700">
+            {job.jobName} - {job.customerName}
           </DialogTitle>
+          <div className="flex items-center space-x-2 mt-2">
+            <Badge className={getStatusColor(job.status)}>{job.status.replace("_", " ").toUpperCase()}</Badge>
+            <span className="text-sm text-gray-600">Job #{job.jobNumber}</span>
+          </div>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="materials">Materials</TabsTrigger>
+        <div className="flex justify-end space-x-2 mb-4">
+          {!viewOnlyMode && isWaiting && (
+            <Button onClick={handleStartJob} className="bg-blue-600 hover:bg-blue-700">
+              Start Job
+            </Button>
+          )}
+          {!viewOnlyMode && isInProgress && (
+            <>
+              <Button onClick={handlePauseJob} className="bg-blue-600 hover:bg-blue-700">
+                Pause Job
+              </Button>
+              <Button onClick={handleCompleteJob} className="bg-blue-600 hover:bg-blue-700">
+                Complete Job
+              </Button>
+            </>
+          )}
+          {!viewOnlyMode && isPaused && (
+            <Button onClick={handleResumeJob} className="bg-blue-600 hover:bg-blue-700">
+              Resume Job
+            </Button>
+          )}
+          {isDone && <Badge variant="secondary">Job Completed</Badge>}
+          {onOpenPopup && (
+            <Button onClick={() => onOpenPopup(job.id)} variant="outline">
+              <Maximize2 className="w-4 h-4 mr-2" />
+              Open in Popup
+            </Button>
+          )}
+        </div>
+
+        <Tabs defaultValue="checklists" className="space-y-4">
+          <TabsList className="border-b w-full">
+            <TabsTrigger value="checklists">Part Checklists</TabsTrigger>
             <TabsTrigger value="sheets">Sheets</TabsTrigger>
             <TabsTrigger value="hardware">Hardware</TabsTrigger>
             <TabsTrigger value="rods">Rods</TabsTrigger>
+            {!viewOnlyMode && (
+              <TabsTrigger value="import">
+                <Upload className="w-4 h-4 mr-2" />
+                Import
+              </TabsTrigger>
+            )}
           </TabsList>
 
-          <TabsContent value="materials" className="space-y-4">
-            {/* Existing materials content */}
-            <div className="space-y-4">
-              <div className="flex justify-end mb-4">
-                <Button
-                  size="sm"
-                  onClick={() => setAddMaterialDialog(true)}
-                  className="bg-purple-600 hover:bg-purple-700 text-white"
-                >
-                  <Palette className="w-4 h-4 mr-1" />
-                  Add Different Color
-                </Button>
-              </div>
-              {/* Existing cutlist materials rendering */}
-            </div>
+          <TabsContent value="checklists" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg text-blue-700">Job Part Checklists</CardTitle>
+                <CardDescription>Manage checklists for this job</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {!viewOnlyMode && (
+                  <div className="space-y-4">
+                    {!showNewChecklistForm ? (
+                      <Button
+                        onClick={() => setShowNewChecklistForm(true)}
+                        className="w-full bg-blue-600 hover:bg-blue-700"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Create New Checklist
+                      </Button>
+                    ) : (
+                      <div className="p-4 bg-blue-50 rounded-lg space-y-4">
+                        <h3 className="text-lg font-medium">Create New Checklist</h3>
+                        <div className="space-y-2">
+                          <Label htmlFor="checklist-name">Checklist Name</Label>
+                          <Input
+                            required
+                            id="checklist-name"
+                            value={newChecklistName}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewChecklistName(e.target.value)}
+                            placeholder="Enter checklist name"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="checklist-description">Description</Label>
+                          <Textarea
+                            id="checklist-description"
+                            value={newChecklistDescription}
+                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                              setNewChecklistDescription(e.target.value)
+                            }
+                            placeholder="Enter description (optional)"
+                          />
+                        </div>
+                        <div className="flex space-x-2">
+                          <Button onClick={handleCreateChecklist} className="bg-blue-600 hover:bg-blue-700">
+                            Create Checklist
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setShowNewChecklistForm(false)
+                              setNewChecklistName("")
+                              setNewChecklistDescription("")
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="space-y-4">
+                  {jobChecklists.map((checklist) => (
+                    <div key={checklist.id} className="border rounded-lg overflow-hidden">
+                      <div className="flex items-center justify-between p-3 bg-blue-50">
+                        <div>
+                          <span className="font-medium">{checklist.name}</span>
+                          {checklist.description && (
+                            <span className="ml-2 text-sm text-gray-600">{checklist.description}</span>
+                          )}
+                        </div>
+                        {!viewOnlyMode && (
+                          <Button variant="ghost" size="sm" onClick={() => handleDeleteChecklist(checklist.id)}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                      <div className="p-3">
+                        {!viewOnlyMode && (
+                          <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                            <h4 className="text-md font-medium mb-2">Add New Item</h4>
+
+                            <div className="space-y-2">
+                              <Input
+                                value={newItemName[checklist.id] || ""}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                                  setNewItemName((prev) => ({ ...prev, [checklist.id]: e.target.value }))
+                                }
+                                placeholder="Item name"
+                              />
+                              <Input
+                                value={newItemDescription[checklist.id] ?? ""}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                                  setNewItemDescription((prev) => ({ ...prev, [checklist.id]: e.target.value }))
+                                }
+                                placeholder="Description (optional)"
+                              />
+                              <Button onClick={() => handleAddItem(checklist.id)} size="sm" className="mt-2">
+                                Add Item
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                        <div className="space-y-2">
+                          {(checklistItems[checklist.id] || []).map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex items-center justify-between p-2 bg-white border rounded"
+                            >
+                              <div className="flex items-center">
+                                {!viewOnlyMode && (
+                                  <input
+                                    type="checkbox"
+                                    checked={!!item.isCompleted}
+                                    onChange={() => handleToggleItem(item.id, !!item.isCompleted, checklist.id)}
+                                    className="mr-2"
+                                  />
+                                )}
+                                <span className={item.isCompleted ? "line-through text-gray-500" : ""}>
+                                  {item.name}
+                                </span>
+                                {item.description && (
+                                  <span className="ml-2 text-sm text-gray-600">- {item.description}</span>
+                                )}
+                              </div>
+                              {!viewOnlyMode && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDeleteItem(item.id, checklist.id)}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="sheets" className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg text-blue-700">Job Sheets</CardTitle>
-                <CardDescription>Material types and quantities needed for this job</CardDescription>
+                <CardDescription>Manage sheets for this job</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg">
-                  <div>
-                    <Label htmlFor="sheet-material">Material Type</Label>
-                    <Input
-                      id="sheet-material"
-                      value={newSheetMaterial}
-                      onChange={(e) => setNewSheetMaterial(e.target.value)}
-                      placeholder="e.g., Plywood, MDF, Melamine"
-                    />
+                {!viewOnlyMode && (
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg">
+                    <div>
+                      <Label htmlFor="sheet-material">Material Type</Label>
+                      <Input
+                        id="sheet-material"
+                        value={newSheetMaterialType}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewSheetMaterialType(e.target.value)}
+                        placeholder="e.g., Wood, Metal"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="sheet-qty">Quantity</Label>
+                      <Input
+                        id="sheet-qty"
+                        type="number"
+                        value={newSheetQty}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewSheetQty(e.target.value)}
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Button onClick={handleAddSheet} className="w-full bg-blue-600 hover:bg-blue-700">
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Sheet
+                      </Button>
+                    </div>
                   </div>
-                  <div>
-                    <Label htmlFor="sheet-qty">Quantity</Label>
-                    <Input
-                      id="sheet-qty"
-                      type="number"
-                      value={newSheetQty}
-                      onChange={(e) => setNewSheetQty(e.target.value)}
-                      placeholder="1"
-                      min="1"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <Button onClick={handleAddSheet} className="w-full bg-blue-600 hover:bg-blue-700">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Sheet
-                    </Button>
-                  </div>
-                </div>
-
+                )}
                 <div className="space-y-2">
-                  {fetchedJobSheets.map((sheet) => (
+                  {jobSheets.map((sheet) => (
                     <div key={sheet.id} className="flex items-center justify-between p-3 bg-white border rounded-lg">
                       <div>
                         <span className="font-medium">{sheet.materialType}</span>
                         <span className="ml-2 text-sm text-gray-600">Qty: {sheet.qty}</span>
                       </div>
-                      <Button variant="ghost" size="sm">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      {!viewOnlyMode && (
+                        <Button variant="ghost" size="sm" onClick={() => handleDeleteSheet(sheet.id)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1102,93 +830,94 @@ export default function JobDetailsModal({
           <TabsContent value="hardware" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg text-orange-700">Job Hardware</CardTitle>
+                <CardTitle className="text-lg text-blue-700">Job Hardware</CardTitle>
                 <CardDescription>Hardware inventory tracking for this job</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-3 gap-4 p-4 bg-orange-50 rounded-lg">
-                  <div className="col-span-3">
-                    <Label htmlFor="hardware-name">Hardware Name</Label>
-                    <Input
-                      id="hardware-name"
-                      value={newHardwareName}
-                      onChange={(e) => setNewHardwareName(e.target.value)}
-                      placeholder="e.g., Hinges, Screws, Handles"
-                    />
+                {!viewOnlyMode && (
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg">
+                    <div className="col-span-2">
+                      <Label htmlFor="hardware-name">Hardware Name</Label>
+                      <Select value={newHardwareSupplyId} onValueChange={setNewHardwareSupplyId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select hardware from inventory" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {supplies.map((supply) => (
+                            <SelectItem key={supply.id} value={supply.id.toString()}>
+                              {supply.name} {supply.partNumber && `(${supply.partNumber})`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="hardware-allocated">Allocated</Label>
+                      <Input
+                        id="hardware-allocated"
+                        type="number"
+                        value={newHardwareAllocated}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewHardwareAllocated(e.target.value)}
+                        placeholder="0"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="hardware-used">Used</Label>
+                      <Input
+                        id="hardware-used"
+                        type="number"
+                        value={newHardwareUsed}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewHardwareUsed(e.target.value)}
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Label htmlFor="hardware-still-required">Still Required</Label>
+                      <Input
+                        id="hardware-still-required"
+                        type="number"
+                        value={newHardwareStillRequired}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                          setNewHardwareStillRequired(e.target.value)
+                        }
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Button onClick={handleAddHardware} className="w-full bg-blue-600 hover:bg-blue-700">
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Hardware
+                      </Button>
+                    </div>
                   </div>
-                  <div>
-                    <Label htmlFor="hardware-qty">Qty</Label>
-                    <Input
-                      id="hardware-qty"
-                      type="number"
-                      value={newHardwareQty}
-                      onChange={(e) => setNewHardwareQty(e.target.value)}
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="hardware-onhand">On Hand</Label>
-                    <Input
-                      id="hardware-onhand"
-                      type="number"
-                      value={newHardwareOnHand}
-                      onChange={(e) => setNewHardwareOnHand(e.target.value)}
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="hardware-needed">Needed</Label>
-                    <Input
-                      id="hardware-needed"
-                      type="number"
-                      value={newHardwareNeeded}
-                      onChange={(e) => setNewHardwareNeeded(e.target.value)}
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="hardware-used">Used</Label>
-                    <Input
-                      id="hardware-used"
-                      type="number"
-                      value={newHardwareUsed}
-                      onChange={(e) => setNewHardwareUsed(e.target.value)}
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="hardware-still-required">Still Required</Label>
-                    <Input
-                      id="hardware-still-required"
-                      type="number"
-                      value={newHardwareStillRequired}
-                      onChange={(e) => setNewHardwareStillRequired(e.target.value)}
-                      placeholder="0"
-                    />
-                  </div>
-                  <div className="col-span-3">
-                    <Button onClick={handleAddHardware} className="w-full bg-orange-600 hover:bg-orange-700">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Hardware
-                    </Button>
-                  </div>
-                </div>
-
+                )}
                 <div className="space-y-2">
-                  {fetchedJobHardware.map((hardware) => (
+                  {jobHardware.map((hardware) => (
                     <div key={hardware.id} className="p-3 bg-white border rounded-lg">
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-medium">{hardware.hardwareName}</span>
-                        <Button variant="ghost" size="sm">
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                        {!viewOnlyMode && (
+                          <Button variant="ghost" size="sm" onClick={() => handleDeleteHardware(hardware.id)}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
-                      <div className="grid grid-cols-5 gap-2 text-sm text-gray-600">
-                        <div>Qty: {hardware.qty}</div>
-                        <div>On Hand: {hardware.onHandQty}</div>
-                        <div>Needed: {hardware.needed}</div>
-                        <div>Used: {hardware.used}</div>
-                        <div>Still Req: {hardware.stillRequired}</div>
+                      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 text-sm text-gray-600">
+                        <div>
+                          On Hand: <span className="font-medium text-gray-800">{hardware.onHandQty}</span>
+                        </div>
+                        <div>
+                          Needed: <span className="font-medium text-gray-800">{hardware.needed}</span>
+                        </div>
+                        <div>
+                          Qty: <span className="font-medium text-blue-600">{hardware.qty}</span>
+                        </div>
+                        <div>
+                          Used: <span className="font-medium text-green-600">{hardware.used}</span>
+                        </div>
+                        <div>
+                          Still Req: <span className="font-medium text-red-600">{hardware.stillRequired}</span>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1200,78 +929,98 @@ export default function JobDetailsModal({
           <TabsContent value="rods" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg text-green-700">Job Rods</CardTitle>
+                <CardTitle className="text-lg text-blue-700">Job Rods</CardTitle>
                 <CardDescription>Rod specifications and lengths for this job</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4 p-4 bg-green-50 rounded-lg">
-                  <div>
-                    <Label htmlFor="rod-name">Rod Name</Label>
-                    <Input
-                      id="rod-name"
-                      value={newRodName}
-                      onChange={(e) => setNewRodName(e.target.value)}
-                      placeholder="e.g., Closet Rod, Support Bar"
-                    />
+                {!viewOnlyMode && (
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg">
+                    <div>
+                      <Label htmlFor="rod-name">Rod Name</Label>
+                      <Input
+                        id="rod-name"
+                        value={newRodName}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewRodName(e.target.value)}
+                        placeholder="e.g., Closet Rod"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="rod-length">Length (inches)</Label>
+                      <Input
+                        id="rod-length"
+                        value={newRodLength}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewRodLength(e.target.value)}
+                        placeholder="e.g., 48"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Button onClick={handleAddRod} className="w-full bg-blue-600 hover:bg-blue-700">
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Rod
+                      </Button>
+                    </div>
                   </div>
-                  <div>
-                    <Label htmlFor="rod-length">Length (inches)</Label>
-                    <Input
-                      id="rod-length"
-                      value={newRodLength}
-                      onChange={(e) => setNewRodLength(e.target.value)}
-                      placeholder="e.g., 5 5/16, 48, 36 1/2"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <Button onClick={handleAddRod} className="w-full bg-green-600 hover:bg-green-700">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Rod
-                    </Button>
-                  </div>
-                </div>
-
+                )}
                 <div className="space-y-2">
-                  {fetchedJobRods.map((rod) => (
+                  {jobRods.map((rod) => (
                     <div key={rod.id} className="flex items-center justify-between p-3 bg-white border rounded-lg">
                       <div>
                         <span className="font-medium">{rod.rodName}</span>
                         <span className="ml-2 text-sm text-gray-600">Length: {rod.lengthInches}"</span>
                       </div>
-                      <Button variant="ghost" size="sm">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      {!viewOnlyMode && (
+                        <Button variant="ghost" size="sm" onClick={() => handleDeleteRod(rod.id)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="import" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg text-blue-700">Import Job Data</CardTitle>
+                <CardDescription>Upload CSV or Excel files to import job data</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button onClick={() => setShowImportDialog(true)} className="w-full bg-blue-600 hover:bg-blue-700">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Import Data
+                </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
 
         <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-md min-h-[400px] max-h-[600px] p-6">
             <DialogHeader>
-              <DialogTitle>Import Job Data</DialogTitle>
+              <DialogTitle className="text-blue-700">Import Job Data</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
                 <Label htmlFor="import-category">Category</Label>
-                <select
-                  id="import-category"
+                <Select
                   value={importCategory}
-                  onChange={(e) => setImportCategory(e.target.value as "sheets" | "hardware" | "rods")}
-                  className="w-full p-2 border rounded mt-1"
+                  onValueChange={(value: "sheets" | "hardware" | "rods") => setImportCategory(value)}
                 >
-                  <option value="sheets">Sheets</option>
-                  <option value="hardware">Hardware</option>
-                  <option value="rods">Rods</option>
-                </select>
+                  <SelectTrigger className="border-blue-200 focus:border-blue-500">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sheets">Sheets</SelectItem>
+                    <SelectItem value="hardware">Hardware</SelectItem>
+                    <SelectItem value="rods">Rods</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-
               <div>
                 <Label htmlFor="import-file">File (CSV or Excel)</Label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center mt-1">
+                <div className="border-2 border-dashed border-blue-300 rounded-lg p-4 text-center hover:border-blue-400 transition-colors">
                   <input
                     type="file"
                     accept=".csv,.xlsx,.xls"
@@ -1281,25 +1030,27 @@ export default function JobDetailsModal({
                     disabled={isUploading}
                   />
                   <label htmlFor="import-file" className="cursor-pointer">
-                    <FileText className="h-8 w-8 mx-auto text-gray-400 mb-2" />
-                    <p className="text-sm text-gray-600">
+                    <FileText className="h-8 w-8 mx-auto text-blue-400 mb-2" />
+                    <p className="text-sm text-blue-600">
                       {isUploading ? "Uploading..." : "Click to upload CSV or Excel file"}
                     </p>
                   </label>
                 </div>
               </div>
-
-              <div className="text-xs text-gray-500 space-y-1">
+              <div className="text-xs text-blue-600 space-y-1 bg-blue-50 p-3 rounded-lg">
                 <p>
                   <strong>Expected columns for {importCategory}:</strong>
                 </p>
                 {importCategory === "sheets" && <p>materialtype, qty</p>}
-                {importCategory === "hardware" && <p>hardwarename, qty, onhandqty, needed, used, stillrequired</p>}
+                {importCategory === "hardware" && <p>supplyid, allocated, used, stillrequired</p>}
                 {importCategory === "rods" && <p>rodname, lengthinches</p>}
               </div>
-
               <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={() => setShowImportDialog(false)}>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowImportDialog(false)}
+                  className="border-blue-200 text-blue-600 hover:bg-blue-50"
+                >
                   Cancel
                 </Button>
               </div>
@@ -1311,3 +1062,4 @@ export default function JobDetailsModal({
   )
 }
 
+export default JobDetailsModal
