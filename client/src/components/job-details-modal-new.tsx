@@ -1,13 +1,11 @@
 "use client"
 
-import type React from "react"
-import { useState, useEffect, useCallback } from "react"
+import React, { useState, useEffect } from "react"
 import { Maximize2, Upload, FileText, Trash2, Plus } from "lucide-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -16,25 +14,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast"
 import { apiRequest } from "@/lib/queryClient"
 import { useWebSocket } from "@/hooks/use-websocket"
-import type {
-  JobWithCutlists,
-  Supply,
-  JobSheet,
-  JobHardware,
-  JobRod,
-  PartChecklist,
-  PartChecklistItem,
-} from "@shared/schema"
+import type { JobWithCutlists, Supply, JobSheet, JobHardware, JobRod, PartChecklistType } from "@shared/schema"
+
+type ChecklistItemInput = {
+  partName: string
+  qty: string
+  isChecked: boolean
+}
 
 interface JobDetailsModalProps {
   job: JobWithCutlists | null
   open: boolean
   onOpenChange: (open: boolean) => void
   viewOnlyMode?: boolean
-  onOpenPopup?: (jobId: number) => void
 }
 
-const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpenPopup }: JobDetailsModalProps) => {
+function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobDetailsModalProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [localJob, setLocalJob] = useState<JobWithCutlists | null>(null)
@@ -50,16 +45,19 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
   const [newRodName, setNewRodName] = useState("")
   const [newRodLength, setNewRodLength] = useState("")
   const [newChecklistName, setNewChecklistName] = useState("")
-  const [newChecklistDescription, setNewChecklistDescription] = useState("")
-  const [showNewChecklistForm, setShowNewChecklistForm] = useState(false)
-  const [newItemName, setNewItemName] = useState<Record<number, string>>({})
-  const [newItemDescription, setNewItemDescription] = useState<Record<number, string>>({})
+  const [newChecklistItems, setNewChecklistItems] = useState<ChecklistItemInput[]>([
+    { partName: "", qty: "", isChecked: false },
+  ])
 
   const { data: supplies = [] } = useQuery<Supply[]>({
     queryKey: ["supplies"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/supplies")
-      return res.json()
+      const data = await res.json()
+      if (!data.length) {
+        toast({ title: "Warning", description: "No supplies available for hardware selection" })
+      }
+      return data
     },
   })
 
@@ -90,7 +88,7 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
     },
   })
 
-  const { data: jobChecklists = [] } = useQuery<PartChecklist[]>({
+  const { data: jobChecklists = [] } = useQuery<PartChecklistType[]>({
     queryKey: ["jobChecklists", job?.id],
     enabled: !!job,
     queryFn: async () => {
@@ -99,455 +97,235 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
     },
   })
 
-  // State for checklist items
-  const [checklistItems, setChecklistItems] = useState<Record<number, PartChecklistItem[]>>({})
-
-  // Fetch checklist items for each checklist
-  useEffect(() => {
-    if (jobChecklists && jobChecklists.length > 0) {
-      const fetchItems = async () => {
-        const items: Record<number, PartChecklistItem[]> = {}
-        for (const checklist of jobChecklists) {
-          try {
-            const res = await apiRequest("GET", `/api/part-checklists/${checklist.id}`)
-            const data = await res.json()
-            items[checklist.id] = data.items || []
-          } catch (error) {
-            console.error(`Error fetching items for checklist ${checklist.id}:`, error)
-            items[checklist.id] = []
-          }
-        }
-        setChecklistItems(items)
-      }
-      fetchItems()
-    }
-  }, [jobChecklists])
-
   useEffect(() => {
     if (job) {
       setLocalJob(job)
     }
   }, [job])
 
-  const handleCreateChecklist = useCallback(async () => {
-    if (!newChecklistName?.trim() || !job) {
-      toast({ title: "Error", description: "Please enter a checklist name" })
-      return
+  useWebSocket((message) => {
+    if (message.type === "job_updated" && message.data.id === job?.id) {
+      setLocalJob(message.data)
+      queryClient.invalidateQueries({ queryKey: ["jobs"] })
     }
+  })
 
-    try {
-      const response = await apiRequest("POST", "/api/part-checklists", {
-        name: newChecklistName.trim(),
-        description: newChecklistDescription?.trim() || "",
-        jobId: job.id,
-        isTemplate: false,
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Unknown error" }))
-        throw new Error(errorData.message || "Failed to create checklist")
-      }
-
-      const newChecklist = await response.json()
-
-      // Update the query cache
-      queryClient.setQueryData<PartChecklist[]>(["jobChecklists", job.id], (oldData) => {
-        if (!oldData) return [newChecklist]
-        return [...oldData, newChecklist]
-      })
-
-      // Reset form
-      setNewChecklistName("")
-      setNewChecklistDescription("")
-      setShowNewChecklistForm(false)
-
-      toast({ title: "Success", description: "Checklist created successfully" })
-    } catch (error) {
-      console.error("Error creating checklist:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create checklist",
-      })
-    }
-  }, [newChecklistName, newChecklistDescription, job, queryClient, toast])
-
-  const handleAddItem = useCallback(
-    async (checklistId: number) => {
-      const itemName = newItemName[checklistId]?.trim()
-      if (!itemName) {
-        toast({ title: "Error", description: "Please enter an item name" })
-        return
-      }
-
-      try {
-        const response = await apiRequest("POST", `/api/part-checklists/${checklistId}/items`, {
-          name: itemName,
-          description: newItemDescription[checklistId]?.trim() || "",
-          category: "general",
-          sortOrder: (checklistItems[checklistId]?.length || 0) + 1, // Set proper sort order
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ message: "Unknown error" }))
-          throw new Error(errorData.message || "Failed to add item")
-        }
-
-        const newItem = await response.json()
-
-        // Update the checklist items state
-        setChecklistItems((prev) => ({
-          ...prev,
-          [checklistId]: [...(prev[checklistId] || []), newItem],
-        }))
-
-        // Reset form for this checklist
-        setNewItemName((prev) => ({ ...prev, [checklistId]: "" }))
-        setNewItemDescription((prev) => ({ ...prev, [checklistId]: "" }))
-
-        toast({ title: "Success", description: "Item added successfully" })
-      } catch (error) {
-        console.error("Error adding item:", error)
-        toast({
-          title: "Error",
-          description: error instanceof Error ? error.message : "Failed to add item",
-        })
-      }
-    },
-    [newItemName, newItemDescription, checklistItems, toast],
-  )
-
-  const handleToggleItem = useCallback(
-    async (itemId: number, isCompleted: boolean, checklistId: number) => {
-      try {
-        const response = await apiRequest("PATCH", `/api/part-checklists/items/${itemId}`, {
-          isCompleted: !isCompleted,
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ message: "Unknown error" }))
-          throw new Error(errorData.message || "Failed to update item")
-        }
-
-        // Update the checklist items state
-        setChecklistItems((prev) => ({
-          ...prev,
-          [checklistId]: (prev[checklistId] || []).map((item) =>
-            item.id === itemId
-              ? { ...item, isCompleted: !isCompleted, completedAt: !isCompleted ? new Date().toISOString() : null }
-              : item,
-          ),
-        }))
-
-        queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] })
-        queryClient.invalidateQueries({ queryKey: ["/api/jobs"] })
-
-        toast({ title: "Success", description: "Item updated successfully" })
-      } catch (error) {
-        console.error("Error updating item:", error)
-        toast({
-          title: "Error",
-          description: error instanceof Error ? error.message : "Failed to update item",
-        })
-      }
-    },
-    [queryClient, toast],
-  )
-
-  const handleDeleteItem = useCallback(
-    async (itemId: number, checklistId: number) => {
-      try {
-        await apiRequest("DELETE", `/api/part-checklists/items/${itemId}`)
-
-        // Update the checklist items state
-        setChecklistItems((prev) => ({
-          ...prev,
-          [checklistId]: (prev[checklistId] || []).filter((item) => item.id !== itemId),
-        }))
-
-        toast({ title: "Success", description: "Item deleted successfully" })
-      } catch (error) {
-        console.error("Error deleting item:", error)
-        toast({ title: "Error", description: "Failed to delete item", variant: "destructive" })
-      }
-    },
-    [toast],
-  )
-
-  const handleDeleteChecklist = useCallback(
-    async (checklistId: number) => {
-      if (!job) return
-      try {
-        await apiRequest("DELETE", `/api/part-checklists/${checklistId}`)
-        queryClient.setQueryData<PartChecklist[]>(["jobChecklists", job.id], (oldData) =>
-          oldData ? oldData.filter((c) => c.id !== checklistId) : [],
-        )
-        toast({ title: "Success", description: "Checklist deleted successfully" })
-      } catch (error) {
-        console.error("Error deleting checklist:", error)
-        toast({ title: "Error", description: "Failed to delete checklist", variant: "destructive" })
-      }
-    },
-    [job, queryClient, toast],
-  )
-
-  useWebSocket(
-    "/ws",
-    useCallback(
-      (message) => {
-        if (message.type === "job_updated" && message.data.id === job?.id) {
-          setLocalJob(message.data)
-          queryClient.invalidateQueries({ queryKey: ["jobs"] })
-        }
-      },
-      [job?.id, queryClient],
-    ),
-  )
-
-  const handleStartJob = useCallback(async () => {
+  const handleStartJob = async () => {
     try {
       await apiRequest("POST", `/api/jobs/${job?.id}/start`, {})
       toast({ title: "Success", description: "Job started successfully" })
       queryClient.invalidateQueries({ queryKey: ["jobs"] })
-    } catch {
-      toast({ title: "Error", description: "Failed to start job" })
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to start job" })
     }
-  }, [job?.id, queryClient, toast])
+  }
 
-  const handlePauseJob = useCallback(async () => {
+  const handlePauseJob = async () => {
     try {
       await apiRequest("POST", `/api/jobs/${job?.id}/pause`, {})
       toast({ title: "Success", description: "Job paused successfully" })
       queryClient.invalidateQueries({ queryKey: ["jobs"] })
-    } catch {
-      toast({ title: "Error", description: "Failed to pause job" })
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to pause job" })
     }
-  }, [job?.id, queryClient, toast])
+  }
 
-  const handleResumeJob = useCallback(async () => {
+  const handleResumeJob = async () => {
     try {
       await apiRequest("POST", `/api/jobs/${job?.id}/resume`, {})
       toast({ title: "Success", description: "Job resumed successfully" })
       queryClient.invalidateQueries({ queryKey: ["jobs"] })
-    } catch {
-      toast({ title: "Error", description: "Failed to resume job" })
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to resume job" })
     }
-  }, [job?.id, queryClient, toast])
+  }
 
-  const handleCompleteJob = useCallback(async () => {
+  const handleCompleteJob = async () => {
     try {
       await apiRequest("POST", `/api/jobs/${job?.id}/complete`, {})
       toast({ title: "Success", description: "Job completed successfully" })
       queryClient.invalidateQueries({ queryKey: ["jobs"] })
       onOpenChange(false)
-    } catch {
-      toast({ title: "Error", description: "Failed to complete job" })
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to complete job" })
     }
-  }, [job?.id, onOpenChange, queryClient, toast])
+  }
 
-  const handleDeleteSheet = useCallback(
-    async (sheetId: number) => {
-      try {
-        await apiRequest("DELETE", `/api/jobs/${job?.id}/sheets/${sheetId}`)
-        toast({ title: "Success", description: "Sheet deleted successfully" })
-        queryClient.invalidateQueries({ queryKey: ["jobSheets", job?.id] })
-      } catch {
-        toast({ title: "Error", description: "Failed to delete sheet" })
-      }
-    },
-    [job?.id, queryClient, toast],
-  )
-
-  const handleDeleteHardware = useCallback(
-    async (hardwareId: number) => {
-      try {
-        await apiRequest("DELETE", `/api/jobs/${job?.id}/hardware/${hardwareId}`)
-        toast({ title: "Success", description: "Hardware deleted successfully" })
-        queryClient.invalidateQueries({ queryKey: ["jobHardware", job?.id] })
-      } catch {
-        toast({ title: "Error", description: "Failed to delete hardware" })
-      }
-    },
-    [job?.id, queryClient, toast],
-  )
-
-  const handleDeleteRod = useCallback(
-    async (rodId: number) => {
-      try {
-        await apiRequest("DELETE", `/api/jobs/${job?.id}/rods/${rodId}`)
-        toast({ title: "Success", description: "Rod deleted successfully" })
-        queryClient.invalidateQueries({ queryKey: ["jobRods", job?.id] })
-      } catch {
-        toast({ title: "Error", description: "Failed to delete rod" })
-      }
-    },
-    [job?.id, queryClient, toast],
-  )
-
-  const handleAddSheet = useCallback(async () => {
-    if (!newSheetMaterialType?.trim() || !newSheetQty) {
-      toast({ title: "Error", description: "Please fill in both material type and quantity" })
-      return
-    }
-
-    const qty = Number.parseInt(newSheetQty)
-    if (isNaN(qty) || qty <= 0) {
-      toast({ title: "Error", description: "Please enter a valid quantity greater than 0" })
-      return
-    }
-
+  const handleDeleteSheet = async (sheetId: number) => {
     try {
-      const response = await apiRequest("POST", `/api/jobs/${job?.id}/sheets`, {
-        materialType: newSheetMaterialType.trim(),
-        qty: qty,
+      await apiRequest("DELETE", `/api/jobs/${job?.id}/sheets/${sheetId}`)
+      toast({ title: "Success", description: "Sheet deleted successfully" })
+      queryClient.invalidateQueries({ queryKey: ["jobSheets", job?.id] })
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to delete sheet" })
+    }
+  }
+
+  const handleDeleteHardware = async (hardwareId: number) => {
+    try {
+      await apiRequest("DELETE", `/api/jobs/${job?.id}/hardware/${hardwareId}`)
+      toast({ title: "Success", description: "Hardware deleted successfully" })
+      queryClient.invalidateQueries({ queryKey: ["jobHardware", job?.id] })
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to delete hardware" })
+    }
+  }
+
+  const handleDeleteRod = async (rodId: number) => {
+    try {
+      await apiRequest("DELETE", `/api/jobs/${job?.id}/rods/${rodId}`)
+      toast({ title: "Success", description: "Rod deleted successfully" })
+      queryClient.invalidateQueries({ queryKey: ["jobRods", job?.id] })
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to delete rod" })
+    }
+  }
+
+  const handleDeleteChecklist = async (checklistId: number) => {
+    try {
+      await apiRequest("DELETE", `/api/jobs/${job?.id}/checklists/${checklistId}`)
+      toast({ title: "Success", description: "Checklist deleted successfully" })
+      queryClient.invalidateQueries({ queryKey: ["jobChecklists", job?.id] })
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to delete checklist" })
+    }
+  }
+
+  const handleAddSheet = async () => {
+    if (!newSheetMaterialType.trim() || !newSheetQty || isNaN(parseInt(newSheetQty)) || parseInt(newSheetQty) <= 0) {
+      toast({ title: "Error", description: "Please enter a valid material type and quantity" })
+      return
+    }
+    try {
+      await apiRequest("POST", `/api/jobs/${job?.id}/sheets`, {
+        materialType: newSheetMaterialType,
+        qty: parseInt(newSheetQty),
       })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Unknown error" }))
-        throw new Error(errorData.message || "Failed to add sheet")
-      }
-
       toast({ title: "Success", description: "Sheet added successfully" })
       queryClient.invalidateQueries({ queryKey: ["jobSheets", job?.id] })
       setNewSheetMaterialType("")
       setNewSheetQty("")
-    } catch (error) {
-      console.error("Error adding sheet:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to add sheet",
-      })
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to add sheet" })
     }
-  }, [job?.id, newSheetMaterialType, newSheetQty, queryClient, toast])
+  }
 
-  const handleAddHardware = useCallback(async () => {
-    if (!newHardwareSupplyId || !newHardwareAllocated) {
-      toast({ title: "Error", description: "Please fill in required fields (Supply and Allocated quantity)" })
+  const handleAddHardware = async () => {
+    if (!newHardwareSupplyId || isNaN(parseInt(newHardwareSupplyId))) {
+      toast({ title: "Error", description: "Please select a valid supply" })
       return
     }
-
-    const selectedSupply = supplies.find((s) => s.id === Number.parseInt(newHardwareSupplyId))
-    if (!selectedSupply) {
-      toast({ title: "Error", description: "Please select a valid hardware item" })
-      return
-    }
-
     try {
-      const response = await apiRequest("POST", `/api/jobs/${job?.id}/hardware`, {
-        supplyId: Number.parseInt(newHardwareSupplyId),
-        allocated: Number.parseInt(newHardwareAllocated) || 0,
-        used: Number.parseInt(newHardwareUsed) || 0,
-        stillRequired: Number.parseInt(newHardwareStillRequired) || 0,
+      await apiRequest("POST", `/api/jobs/${job?.id}/hardware`, {
+        supplyId: parseInt(newHardwareSupplyId),
+        allocated: parseInt(newHardwareAllocated) || 0,
+        used: parseInt(newHardwareUsed) || 0,
+        stillRequired: parseInt(newHardwareStillRequired) || 0,
       })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Unknown error" }))
-        throw new Error(errorData.message || "Failed to add hardware")
-      }
-
       toast({ title: "Success", description: "Hardware added successfully" })
       queryClient.invalidateQueries({ queryKey: ["jobHardware", job?.id] })
       setNewHardwareSupplyId("")
       setNewHardwareAllocated("")
       setNewHardwareUsed("")
       setNewHardwareStillRequired("")
-    } catch (error) {
-      console.error("Error adding hardware:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to add hardware",
-      })
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to add hardware" })
     }
-  }, [
-    job?.id,
-    newHardwareSupplyId,
-    newHardwareAllocated,
-    newHardwareUsed,
-    newHardwareStillRequired,
-    queryClient,
-    supplies,
-    toast,
-  ])
+  }
 
-  const handleAddRod = useCallback(async () => {
-    if (!newRodName?.trim() || !newRodLength?.trim()) {
-      toast({ title: "Error", description: "Please fill in both rod name and length" })
+  const handleAddRod = async () => {
+    if (!newRodName || !newRodLength) {
+      toast({ title: "Error", description: "Please enter a rod name and length" })
       return
     }
-
+    const lengthInches = parseInt(newRodLength, 10)
+    if (isNaN(lengthInches) || lengthInches <= 0) {
+      toast({ title: "Error", description: "Please enter a valid positive number for length" })
+      return
+    }
     try {
-      const response = await apiRequest("POST", `/api/jobs/${job?.id}/rods`, {
-        rodName: newRodName.trim(),
-        lengthInches: newRodLength.trim(),
+      await apiRequest("POST", `/api/jobs/${job?.id}/rods`, {
+        rodName: newRodName,
+        lengthInches,
       })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Unknown error" }))
-        throw new Error(errorData.message || "Failed to add rod")
-      }
-
       toast({ title: "Success", description: "Rod added successfully" })
       queryClient.invalidateQueries({ queryKey: ["jobRods", job?.id] })
       setNewRodName("")
       setNewRodLength("")
-    } catch (error) {
-      console.error("Error adding rod:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to add rod",
-      })
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to add rod" })
     }
-  }, [job?.id, newRodLength, newRodName, queryClient, toast])
+  }
 
-  const handleFileImport = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]
-      if (!file) return
+  const handleAddChecklist = async () => {
+    if (!newChecklistName.trim()) {
+      toast({ title: "Error", description: "Checklist name is required" })
+      return
+    }
+    const items = newChecklistItems.map((item) => ({
+      partName: item.partName,
+      qty: parseInt(item.qty, 10),
+      isChecked: item.isChecked,
+    }))
+    if (items.some((item) => !item.partName.trim() || isNaN(item.qty) || item.qty <= 0)) {
+      toast({ title: "Error", description: "All items must have a valid part name and positive quantity" })
+      return
+    }
+    try {
+      await apiRequest("POST", `/api/jobs/${job?.id}/checklists`, {
+        name: newChecklistName,
+        items,
+      })
+      toast({ title: "Success", description: "Checklist added successfully" })
+      queryClient.invalidateQueries({ queryKey: ["jobChecklists", job?.id] })
+      setNewChecklistName("")
+      setNewChecklistItems([{ partName: "", qty: "", isChecked: false }])
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to add checklist" })
+    }
+  }
 
-      const allowedTypes = [".csv", ".xlsx", ".xls"]
-      const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf("."))
-      if (!allowedTypes.includes(fileExtension)) {
-        toast({ title: "Error", description: "Please select a CSV or Excel file" })
-        return
+  const handleAddChecklistItemInput = () => {
+    setNewChecklistItems([...newChecklistItems, { partName: "", qty: "", isChecked: false }])
+  }
+
+  const handleChecklistItemChange = (index: number, field: keyof ChecklistItemInput, value: string | boolean) => {
+    const updatedItems = [...newChecklistItems]
+    updatedItems[index] = { ...updatedItems[index], [field]: value }
+    setNewChecklistItems(updatedItems)
+  }
+
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setIsUploading(true)
+    const formData = new FormData()
+    formData.append("importFile", file)
+    formData.append("category", importCategory)
+    try {
+      const res = await apiRequest("POST", `/api/jobs/${job?.id}/import`, formData, true)
+      const data = await res.json()
+      toast({
+        title: "Import Complete",
+        description: `${data.imported} items imported successfully`,
+      })
+      queryClient.invalidateQueries({ queryKey: [`job${importCategory.charAt(0).toUpperCase() + importCategory.slice(1)}`, job?.id] })
+      setShowImportDialog(false)
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to import some or all items. Check file format." })
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const handleOpenPopup = () => {
+    if (job?.id) {
+      const popup = window.open(`/popup/${job.id}`, "_blank", "width=800,height=600")
+      if (!popup) {
+        toast({ title: "Error", description: "Popup blocked. Please allow popups for this site." })
       }
-
-      setIsUploading(true)
-      const formData = new FormData()
-      formData.append("file", file) // Changed from "importFile" to "file" to match server expectations
-      formData.append("category", importCategory)
-
-      try {
-        const res = await apiRequest("POST", `/api/jobs/${job?.id}/import`, formData)
-
-        if (!res.ok) {
-          const errorData = await res.json().catch(() => ({ message: "Import failed" }))
-          throw new Error(errorData.message || "Import failed")
-        }
-
-        const data = await res.json()
-        toast({
-          title: "Import Complete",
-          description: `${data.imported} items imported successfully`,
-        })
-
-        const queryKey =
-          importCategory === "sheets" ? "jobSheets" : importCategory === "hardware" ? "jobHardware" : "jobRods"
-        queryClient.invalidateQueries({ queryKey: [queryKey, job?.id] })
-
-        setShowImportDialog(false)
-      } catch (error) {
-        console.error("Import error:", error)
-        toast({
-          title: "Error",
-          description: error instanceof Error ? error.message : "Failed to import file",
-        })
-      } finally {
-        setIsUploading(false)
-        // Reset file input
-        e.target.value = ""
-      }
-    },
-    [importCategory, job?.id, queryClient, toast],
-  )
+    }
+  }
 
   if (!job) return null
 
@@ -573,9 +351,9 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl min-h-[80vh] max-h-[90vh] overflow-y-auto p-6">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-6">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-bold text-blue-700">
+          <DialogTitle className="text-2xl font-bold text-orange-800">
             {job.jobName} - {job.customerName}
           </DialogTitle>
           <div className="flex items-center space-x-2 mt-2">
@@ -586,184 +364,122 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
 
         <div className="flex justify-end space-x-2 mb-4">
           {!viewOnlyMode && isWaiting && (
-            <Button onClick={handleStartJob} className="bg-blue-600 hover:bg-blue-700">
+            <Button onClick={handleStartJob} className="bg-green-600 hover:bg-green-700">
               Start Job
             </Button>
           )}
           {!viewOnlyMode && isInProgress && (
-            <>
-              <Button onClick={handlePauseJob} className="bg-blue-600 hover:bg-blue-700">
-                Pause Job
-              </Button>
-              <Button onClick={handleCompleteJob} className="bg-blue-600 hover:bg-blue-700">
-                Complete Job
-              </Button>
-            </>
+            <Button onClick={handlePauseJob} className="bg-yellow-600 hover:bg-yellow-700">
+              Pause Job
+            </Button>
           )}
           {!viewOnlyMode && isPaused && (
             <Button onClick={handleResumeJob} className="bg-blue-600 hover:bg-blue-700">
               Resume Job
             </Button>
           )}
-          {isDone && <Badge variant="secondary">Job Completed</Badge>}
-          {onOpenPopup && (
-            <Button onClick={() => onOpenPopup(job.id)} variant="outline">
-              <Maximize2 className="w-4 h-4 mr-2" />
-              Open in Popup
+          {!viewOnlyMode && (isInProgress || isPaused) && (
+            <Button onClick={handleCompleteJob} className="bg-green-600 hover:bg-green-700">
+              Complete Job
             </Button>
           )}
+          <Button variant="outline" onClick={handleOpenPopup}>
+            <Maximize2 className="w-4 h-4 mr-2" />
+            Open in Popup
+          </Button>
         </div>
 
         <Tabs defaultValue="checklists" className="space-y-4">
-          <TabsList className="border-b w-full">
-            <TabsTrigger value="checklists">Part Checklists</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-5">
+            <TabsTrigger value="checklists">Checklists</TabsTrigger>
             <TabsTrigger value="sheets">Sheets</TabsTrigger>
             <TabsTrigger value="hardware">Hardware</TabsTrigger>
             <TabsTrigger value="rods">Rods</TabsTrigger>
-            {!viewOnlyMode && (
-              <TabsTrigger value="import">
-                <Upload className="w-4 h-4 mr-2" />
-                Import
-              </TabsTrigger>
-            )}
+            <TabsTrigger value="import">Import</TabsTrigger>
           </TabsList>
 
           <TabsContent value="checklists" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg text-blue-700">Job Part Checklists</CardTitle>
-                <CardDescription>Manage checklists for this job</CardDescription>
+                <CardTitle className="text-lg text-green-700">Job Checklists</CardTitle>
+                <CardDescription>Track parts and checklists for this job</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {!viewOnlyMode && (
-                  <div className="space-y-4">
-                    {!showNewChecklistForm ? (
-                      <Button
-                        onClick={() => setShowNewChecklistForm(true)}
-                        className="w-full bg-blue-600 hover:bg-blue-700"
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Create New Checklist
-                      </Button>
-                    ) : (
-                      <div className="p-4 bg-blue-50 rounded-lg space-y-4">
-                        <h3 className="text-lg font-medium">Create New Checklist</h3>
-                        <div className="space-y-2">
-                          <Label htmlFor="checklist-name">Checklist Name</Label>
+                  <div className="grid grid-cols-1 gap-4 p-4 bg-green-50 rounded-lg">
+                    <div>
+                      <Label htmlFor="checklist-name">Checklist Name</Label>
+                      <Input
+                        id="checklist-name"
+                        value={newChecklistName}
+                        onChange={(e) => setNewChecklistName(e.target.value)}
+                        placeholder="e.g., Parts Checklist"
+                      />
+                    </div>
+                    {newChecklistItems.map((item, index) => (
+                      <div key={index} className="grid grid-cols-3 gap-2">
+                        <div>
+                          <Label htmlFor={`item-part-${index}`}>Part Name</Label>
                           <Input
-                            required
-                            id="checklist-name"
-                            value={newChecklistName}
-                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewChecklistName(e.target.value)}
-                            placeholder="Enter checklist name"
+                            id={`item-part-${index}`}
+                            value={item.partName}
+                            onChange={(e) => handleChecklistItemChange(index, "partName", e.target.value)}
+                            placeholder="e.g., Bracket"
                           />
                         </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="checklist-description">Description</Label>
-                          <Textarea
-                            id="checklist-description"
-                            value={newChecklistDescription}
-                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                              setNewChecklistDescription(e.target.value)
-                            }
-                            placeholder="Enter description (optional)"
+                        <div>
+                          <Label htmlFor={`item-qty-${index}`}>Quantity</Label>
+                          <Input
+                            id={`item-qty-${index}`}
+                            type="number"
+                            value={item.qty}
+                            onChange={(e) => handleChecklistItemChange(index, "qty", e.target.value)}
+                            placeholder="0"
                           />
                         </div>
-                        <div className="flex space-x-2">
-                          <Button onClick={handleCreateChecklist} className="bg-blue-600 hover:bg-blue-700">
-                            Create Checklist
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => {
-                              setShowNewChecklistForm(false)
-                              setNewChecklistName("")
-                              setNewChecklistDescription("")
-                            }}
-                          >
-                            Cancel
-                          </Button>
+                        <div className="flex items-center space-x-2 mt-6">
+                          <Input
+                            type="checkbox"
+                            checked={item.isChecked}
+                            onChange={(e) => handleChecklistItemChange(index, "isChecked", e.target.checked)}
+                          />
+                          <Label>Checked</Label>
                         </div>
                       </div>
-                    )}
+                    ))}
+                    <div className="flex space-x-2">
+                      <Button variant="outline" onClick={handleAddChecklistItemInput} className="flex-1">
+                        Add Another Item
+                      </Button>
+                      <Button onClick={handleAddChecklist} className="flex-1 bg-blue-600 hover:bg-blue-700">
+                        Add Checklist
+                      </Button>
+                    </div>
                   </div>
                 )}
-                <div className="space-y-4">
+                <div className="space-y-2">
                   {jobChecklists.map((checklist) => (
-                    <div key={checklist.id} className="border rounded-lg overflow-hidden">
-                      <div className="flex items-center justify-between p-3 bg-blue-50">
-                        <div>
-                          <span className="font-medium">{checklist.name}</span>
-                          {checklist.description && (
-                            <span className="ml-2 text-sm text-gray-600">{checklist.description}</span>
-                          )}
-                        </div>
+                    <div key={checklist.id} className="p-3 bg-white border rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-medium">{checklist.name}</span>
                         {!viewOnlyMode && (
                           <Button variant="ghost" size="sm" onClick={() => handleDeleteChecklist(checklist.id)}>
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         )}
                       </div>
-                      <div className="p-3">
-                        {!viewOnlyMode && (
-                          <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                            <h4 className="text-md font-medium mb-2">Add New Item</h4>
-
-                            <div className="space-y-2">
-                              <Input
-                                value={newItemName[checklist.id] || ""}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                                  setNewItemName((prev) => ({ ...prev, [checklist.id]: e.target.value }))
-                                }
-                                placeholder="Item name"
-                              />
-                              <Input
-                                value={newItemDescription[checklist.id] ?? ""}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                                  setNewItemDescription((prev) => ({ ...prev, [checklist.id]: e.target.value }))
-                                }
-                                placeholder="Description (optional)"
-                              />
-                              <Button onClick={() => handleAddItem(checklist.id)} size="sm" className="mt-2">
-                                Add Item
-                              </Button>
-                            </div>
+                      <div className="space-y-1 text-sm text-gray-600">
+                        {checklist.items.map((item) => (
+                          <div key={item.id} className="flex items-center justify-between">
+                            <span>{item.partName} - Qty: {item.qty}</span>
+                            <Input
+                              type="checkbox"
+                              checked={item.isChecked}
+                              disabled
+                              aria-readonly="true"
+                            />
                           </div>
-                        )}
-                        <div className="space-y-2">
-                          {(checklistItems[checklist.id] || []).map((item) => (
-                            <div
-                              key={item.id}
-                              className="flex items-center justify-between p-2 bg-white border rounded"
-                            >
-                              <div className="flex items-center">
-                                {!viewOnlyMode && (
-                                  <input
-                                    type="checkbox"
-                                    checked={!!item.isCompleted}
-                                    onChange={() => handleToggleItem(item.id, !!item.isCompleted, checklist.id)}
-                                    className="mr-2"
-                                  />
-                                )}
-                                <span className={item.isCompleted ? "line-through text-gray-500" : ""}>
-                                  {item.name}
-                                </span>
-                                {item.description && (
-                                  <span className="ml-2 text-sm text-gray-600">- {item.description}</span>
-                                )}
-                              </div>
-                              {!viewOnlyMode && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDeleteItem(item.id, checklist.id)}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                        ))}
                       </div>
                     </div>
                   ))}
@@ -786,7 +502,7 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
                       <Input
                         id="sheet-material"
                         value={newSheetMaterialType}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewSheetMaterialType(e.target.value)}
+                        onChange={(e) => setNewSheetMaterialType(e.target.value)}
                         placeholder="e.g., Wood, Metal"
                       />
                     </div>
@@ -796,7 +512,7 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
                         id="sheet-qty"
                         type="number"
                         value={newSheetQty}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewSheetQty(e.target.value)}
+                        onChange={(e) => setNewSheetQty(e.target.value)}
                         placeholder="0"
                       />
                     </div>
@@ -830,12 +546,12 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
           <TabsContent value="hardware" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg text-blue-700">Job Hardware</CardTitle>
+                <CardTitle className="text-lg text-orange-700">Job Hardware</CardTitle>
                 <CardDescription>Hardware inventory tracking for this job</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {!viewOnlyMode && (
-                  <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg">
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-orange-50 rounded-lg">
                     <div className="col-span-2">
                       <Label htmlFor="hardware-name">Hardware Name</Label>
                       <Select value={newHardwareSupplyId} onValueChange={setNewHardwareSupplyId}>
@@ -857,7 +573,7 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
                         id="hardware-allocated"
                         type="number"
                         value={newHardwareAllocated}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewHardwareAllocated(e.target.value)}
+                        onChange={(e) => setNewHardwareAllocated(e.target.value)}
                         placeholder="0"
                       />
                     </div>
@@ -867,7 +583,7 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
                         id="hardware-used"
                         type="number"
                         value={newHardwareUsed}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewHardwareUsed(e.target.value)}
+                        onChange={(e) => setNewHardwareUsed(e.target.value)}
                         placeholder="0"
                       />
                     </div>
@@ -877,14 +593,12 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
                         id="hardware-still-required"
                         type="number"
                         value={newHardwareStillRequired}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                          setNewHardwareStillRequired(e.target.value)
-                        }
+                        onChange={(e) => setNewHardwareStillRequired(e.target.value)}
                         placeholder="0"
                       />
                     </div>
                     <div className="col-span-2">
-                      <Button onClick={handleAddHardware} className="w-full bg-blue-600 hover:bg-blue-700">
+                      <Button onClick={handleAddHardware} className="w-full bg-orange-600 hover:bg-orange-700">
                         <Plus className="w-4 h-4 mr-2" />
                         Add Hardware
                       </Button>
@@ -895,7 +609,7 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
                   {jobHardware.map((hardware) => (
                     <div key={hardware.id} className="p-3 bg-white border rounded-lg">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium">{hardware.hardwareName}</span>
+                        <span className="font-medium">{hardware.supply?.name || "Unknown Hardware"}</span>
                         {!viewOnlyMode && (
                           <Button variant="ghost" size="sm" onClick={() => handleDeleteHardware(hardware.id)}>
                             <Trash2 className="w-4 h-4" />
@@ -904,13 +618,13 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
                       </div>
                       <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 text-sm text-gray-600">
                         <div>
-                          On Hand: <span className="font-medium text-gray-800">{hardware.onHandQty}</span>
+                          On Hand: <span className="font-medium text-gray-800">{hardware.onHand}</span>
                         </div>
                         <div>
-                          Needed: <span className="font-medium text-gray-800">{hardware.needed}</span>
+                          Available: <span className="font-medium text-gray-800">{hardware.available}</span>
                         </div>
                         <div>
-                          Qty: <span className="font-medium text-blue-600">{hardware.qty}</span>
+                          Allocated: <span className="font-medium text-orange-600">{hardware.allocated}</span>
                         </div>
                         <div>
                           Used: <span className="font-medium text-green-600">{hardware.used}</span>
@@ -929,18 +643,18 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
           <TabsContent value="rods" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg text-blue-700">Job Rods</CardTitle>
+                <CardTitle className="text-lg text-green-700">Job Rods</CardTitle>
                 <CardDescription>Rod specifications and lengths for this job</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {!viewOnlyMode && (
-                  <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg">
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-green-50 rounded-lg">
                     <div>
                       <Label htmlFor="rod-name">Rod Name</Label>
                       <Input
                         id="rod-name"
                         value={newRodName}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewRodName(e.target.value)}
+                        onChange={(e) => setNewRodName(e.target.value)}
                         placeholder="e.g., Closet Rod"
                       />
                     </div>
@@ -948,13 +662,14 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
                       <Label htmlFor="rod-length">Length (inches)</Label>
                       <Input
                         id="rod-length"
+                        type="number"
                         value={newRodLength}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewRodLength(e.target.value)}
-                        placeholder="e.g., 48"
+                        onChange={(e) => setNewRodLength(e.target.value)}
+                        placeholder="0"
                       />
                     </div>
                     <div className="col-span-2">
-                      <Button onClick={handleAddRod} className="w-full bg-blue-600 hover:bg-blue-700">
+                      <Button onClick={handleAddRod} className="w-full bg-green-600 hover:bg-green-700">
                         <Plus className="w-4 h-4 mr-2" />
                         Add Rod
                       </Button>
@@ -983,11 +698,11 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
           <TabsContent value="import" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg text-blue-700">Import Job Data</CardTitle>
+                <CardTitle className="text-lg text-gray-700">Import Job Data</CardTitle>
                 <CardDescription>Upload CSV or Excel files to import job data</CardDescription>
               </CardHeader>
               <CardContent>
-                <Button onClick={() => setShowImportDialog(true)} className="w-full bg-blue-600 hover:bg-blue-700">
+                <Button onClick={() => setShowImportDialog(true)} className="w-full bg-gray-600 hover:bg-gray-700">
                   <Upload className="w-4 h-4 mr-2" />
                   Import Data
                 </Button>
@@ -997,18 +712,18 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
         </Tabs>
 
         <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-          <DialogContent className="max-w-md min-h-[400px] max-h-[600px] p-6">
+          <DialogContent className="max-w-md p-6">
             <DialogHeader>
-              <DialogTitle className="text-blue-700">Import Job Data</DialogTitle>
+              <DialogTitle>Import Job Data</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
                 <Label htmlFor="import-category">Category</Label>
                 <Select
                   value={importCategory}
-                  onValueChange={(value: "sheets" | "hardware" | "rods") => setImportCategory(value)}
+                  onValueChange={(value) => setImportCategory(value as "sheets" | "hardware" | "rods")}
                 >
-                  <SelectTrigger className="border-blue-200 focus:border-blue-500">
+                  <SelectTrigger>
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1020,7 +735,7 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
               </div>
               <div>
                 <Label htmlFor="import-file">File (CSV or Excel)</Label>
-                <div className="border-2 border-dashed border-blue-300 rounded-lg p-4 text-center hover:border-blue-400 transition-colors">
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
                   <input
                     type="file"
                     accept=".csv,.xlsx,.xls"
@@ -1030,27 +745,23 @@ const JobDetailsModal = ({ job, open, onOpenChange, viewOnlyMode = false, onOpen
                     disabled={isUploading}
                   />
                   <label htmlFor="import-file" className="cursor-pointer">
-                    <FileText className="h-8 w-8 mx-auto text-blue-400 mb-2" />
-                    <p className="text-sm text-blue-600">
+                    <FileText className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+                    <p className="text-sm text-gray-600">
                       {isUploading ? "Uploading..." : "Click to upload CSV or Excel file"}
                     </p>
                   </label>
                 </div>
               </div>
-              <div className="text-xs text-blue-600 space-y-1 bg-blue-50 p-3 rounded-lg">
+              <div className="text-xs text-gray-500 space-y-1">
                 <p>
                   <strong>Expected columns for {importCategory}:</strong>
                 </p>
                 {importCategory === "sheets" && <p>materialtype, qty</p>}
-                {importCategory === "hardware" && <p>supplyid, allocated, used, stillrequired</p>}
+                {importCategory === "hardware" && <p>hardwarename, allocated, used, stillrequired</p>}
                 {importCategory === "rods" && <p>rodname, lengthinches</p>}
               </div>
               <div className="flex justify-end space-x-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowImportDialog(false)}
-                  className="border-blue-200 text-blue-600 hover:bg-blue-50"
-                >
+                <Button variant="outline" onClick={() => setShowImportDialog(false)}>
                   Cancel
                 </Button>
               </div>

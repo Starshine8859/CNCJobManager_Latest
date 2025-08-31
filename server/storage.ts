@@ -1,4 +1,5 @@
 import {
+  jobSheets, jobHardware, jobRods, partChecklists,
   users, jobs, cutlists, jobMaterials, colors, colorGroups, jobTimeLogs, recutEntries, sheetCutLogs,
   locations, supplies, supplyVendors, supplyLocations, supplyTransactions, vendors, purchaseOrders, purchaseOrderItems,
   locationCategories, inventoryMovements, vendorContacts, inventoryAlerts,
@@ -10,7 +11,8 @@ import {
   type Location, type InsertLocation, type Supply, type InsertSupply,
   type SupplyWithLocation, type SupplyTransaction, type InsertSupplyTransaction,
   type Vendor, type InsertVendor, type PurchaseOrderWithItems, type InsertPurchaseOrder, type InsertPurchaseOrderItem,
-  type LocationCategory, type InsertLocationCategory, type InventoryMovement, type InsertInventoryMovement
+  type LocationCategory, type InsertLocationCategory, type InventoryMovement, type InsertInventoryMovement,
+  InsertJobSheet, InsertJobHardware, InsertJobRod, type JobSheet, type JobHardware, type JobRod, PartChecklistType
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, ilike, sql, inArray, gte, lte } from "drizzle-orm";
@@ -135,6 +137,18 @@ export interface IStorage {
     materialColors: number;
     jobsByStatus: { waiting: number; in_progress: number; done: number };
   }>;
+
+  getJobSheets(jobId: number): Promise<JobSheet[]>;
+  createJobSheet(data: InsertJobSheet): Promise<JobSheet>;
+  deleteJobSheet(id: number): Promise<void>;
+  getJobHardware(jobId: number): Promise<JobHardware[]>;
+  createJobHardware(data: InsertJobHardware): Promise<JobHardware>;
+  deleteJobHardware(id: number): Promise<void>;
+  getJobRods(jobId: number): Promise<JobRod[]>;
+  createJobRod(data: InsertJobRod): Promise<JobRod>;
+  deleteJobRod(id: number): Promise<void>;
+  getJobChecklists(jobId: number): Promise<PartChecklistType[]>;
+  findSupplyByName(name: string): Promise<Supply | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -722,8 +736,8 @@ export class DatabaseStorage implements IStorage {
       const cutlistData = await tx.select({
         jobId: cutlists.jobId
       }).from(jobMaterials)
-      .innerJoin(cutlists, eq(jobMaterials.cutlistId, cutlists.id))
-      .where(eq(jobMaterials.id, materialId));
+        .innerJoin(cutlists, eq(jobMaterials.cutlistId, cutlists.id))
+        .where(eq(jobMaterials.id, materialId));
 
       if (cutlistData.length > 0) {
         const jobId = cutlistData[0].jobId;
@@ -790,10 +804,10 @@ export class DatabaseStorage implements IStorage {
         username: users.username
       }
     })
-    .from(recutEntries)
-    .leftJoin(users, eq(recutEntries.userId, users.id))
-    .where(eq(recutEntries.materialId, materialId))
-    .orderBy(desc(recutEntries.createdAt));
+      .from(recutEntries)
+      .leftJoin(users, eq(recutEntries.userId, users.id))
+      .where(eq(recutEntries.materialId, materialId))
+      .orderBy(desc(recutEntries.createdAt));
 
     return entries;
   }
@@ -837,9 +851,9 @@ export class DatabaseStorage implements IStorage {
     const jobData = await db.select({
       jobId: cutlists.jobId
     }).from(recutEntries)
-    .innerJoin(jobMaterials, eq(recutEntries.materialId, jobMaterials.id))
-    .innerJoin(cutlists, eq(jobMaterials.cutlistId, cutlists.id))
-    .where(eq(recutEntries.id, recutId));
+      .innerJoin(jobMaterials, eq(recutEntries.materialId, jobMaterials.id))
+      .innerJoin(cutlists, eq(jobMaterials.cutlistId, cutlists.id))
+      .where(eq(recutEntries.id, recutId));
 
     if (jobData.length > 0) {
       const jobId = jobData[0].jobId;
@@ -1011,52 +1025,52 @@ export class DatabaseStorage implements IStorage {
       sheetsCutResult = await db.select({
         totalSheets: sql<number>`count(*)`
       })
-      .from(sheetCutLogs)
-      .where(
-        and(
-          eq(sheetCutLogs.isRecut, false),
-          eq(sheetCutLogs.status, 'cut'),
-          gte(sheetCutLogs.cutAt, sheetsFromDate),
-          lte(sheetCutLogs.cutAt, sheetsToDate)
-        )
-      );
+        .from(sheetCutLogs)
+        .where(
+          and(
+            eq(sheetCutLogs.isRecut, false),
+            eq(sheetCutLogs.status, 'cut'),
+            gte(sheetCutLogs.cutAt, sheetsFromDate),
+            lte(sheetCutLogs.cutAt, sheetsToDate)
+          )
+        );
 
       // Count recut sheets cut in the date range
       recutSheetsCutResult = await db.select({
         totalRecutSheets: sql<number>`count(*)`
       })
-      .from(sheetCutLogs)
-      .where(
-        and(
-          eq(sheetCutLogs.isRecut, true),
-          eq(sheetCutLogs.status, 'cut'),
-          gte(sheetCutLogs.cutAt, sheetsFromDate),
-          lte(sheetCutLogs.cutAt, sheetsToDate)
-        )
-      );
+        .from(sheetCutLogs)
+        .where(
+          and(
+            eq(sheetCutLogs.isRecut, true),
+            eq(sheetCutLogs.status, 'cut'),
+            gte(sheetCutLogs.cutAt, sheetsFromDate),
+            lte(sheetCutLogs.cutAt, sheetsToDate)
+          )
+        );
     } else {
       // Count all sheets cut (no date filtering)
       sheetsCutResult = await db.select({
         totalSheets: sql<number>`count(*)`
       })
-      .from(sheetCutLogs)
-      .where(
-        and(
-          eq(sheetCutLogs.isRecut, false),
-          eq(sheetCutLogs.status, 'cut')
-        )
-      );
+        .from(sheetCutLogs)
+        .where(
+          and(
+            eq(sheetCutLogs.isRecut, false),
+            eq(sheetCutLogs.status, 'cut')
+          )
+        );
 
       recutSheetsCutResult = await db.select({
         totalRecutSheets: sql<number>`count(*)`
       })
-      .from(sheetCutLogs)
-      .where(
-        and(
-          eq(sheetCutLogs.isRecut, true),
-          eq(sheetCutLogs.status, 'cut')
-        )
-      );
+        .from(sheetCutLogs)
+        .where(
+          and(
+            eq(sheetCutLogs.isRecut, true),
+            eq(sheetCutLogs.status, 'cut')
+          )
+        );
     }
 
     // Calculate average job time (with date filtering if provided)
@@ -1085,13 +1099,13 @@ export class DatabaseStorage implements IStorage {
         startTime: jobTimeLogs.startTime,
         endTime: jobTimeLogs.endTime,
       }).from(jobTimeLogs)
-      .where(
-        // any overlap with [timeFromDate, timeToDate]
-        and(
-          sql`${jobTimeLogs.startTime} <= ${timeToDate}`,
-          sql`${jobTimeLogs.endTime} IS NULL OR ${jobTimeLogs.endTime} >= ${timeFromDate}`
-        )
-      );
+        .where(
+          // any overlap with [timeFromDate, timeToDate]
+          and(
+            sql`${jobTimeLogs.startTime} <= ${timeToDate}`,
+            sql`${jobTimeLogs.endTime} IS NULL OR ${jobTimeLogs.endTime} >= ${timeFromDate}`
+          )
+        );
 
       const perJob: Record<number, number> = {};
       for (const log of logsInRange) {
@@ -1128,7 +1142,7 @@ export class DatabaseStorage implements IStorage {
       avgTimeResult = await db.select({
         avgDuration: sql<number>`avg(${jobs.totalDuration})`
       }).from(jobs)
-      .where(sql`${jobs.totalDuration} IS NOT NULL`);
+        .where(sql`${jobs.totalDuration} IS NOT NULL`);
       avgJobTimeSeconds = Math.round(Number(avgTimeResult[0]?.avgDuration || 0));
 
       jobsForSheetTime = await db.query.jobs.findMany({
@@ -1218,8 +1232,8 @@ export class DatabaseStorage implements IStorage {
         locationName: locations.name,
         categoryId: locations.categoryId,
       })
-      .from(supplyLocations)
-      .leftJoin(locations, eq(supplyLocations.locationId, locations.id));
+        .from(supplyLocations)
+        .leftJoin(locations, eq(supplyLocations.locationId, locations.id));
 
       const supplyIdToSummary: Record<number, any> = {};
       for (const row of supplyLocationRows) {
@@ -1470,9 +1484,9 @@ export class DatabaseStorage implements IStorage {
         locationName: locations.name,
         categoryId: locations.categoryId,
       })
-      .from(supplyLocations)
-      .leftJoin(locations, eq(supplyLocations.locationId, locations.id))
-      .where(inArray(supplyLocations.supplyId, supplyIds));
+        .from(supplyLocations)
+        .leftJoin(locations, eq(supplyLocations.locationId, locations.id))
+        .where(inArray(supplyLocations.supplyId, supplyIds));
 
       const supplyIdToSummary: Record<number, any> = {};
       for (const row of supplyLocationRows) {
@@ -1751,7 +1765,7 @@ export class DatabaseStorage implements IStorage {
         updatedAt: supplies.updatedAt,
         onHandQuantity: supplyLocations.onHandQuantity,
         minimumQuantity: supplyLocations.minimumQuantity,
-                 orderGroupSize: supplyLocations.orderGroupSize
+        orderGroupSize: supplyLocations.orderGroupSize
       })
       .from(supplies)
       .innerJoin(supplyLocations, eq(supplies.id, supplyLocations.supplyId))
@@ -1797,8 +1811,8 @@ export class DatabaseStorage implements IStorage {
           orderInGroups: purchaseOrderItems.orderInGroups,
           createdAt: purchaseOrderItems.createdAt
         })
-        .from(purchaseOrderItems)
-        .where(eq(purchaseOrderItems.purchaseOrderId, order.id));
+          .from(purchaseOrderItems)
+          .where(eq(purchaseOrderItems.purchaseOrderId, order.id));
 
         // Get supply and vendor details for each item
         const itemsWithDetails: (typeof purchaseOrderItems.$inferSelect & { supply: Supply; vendor: Vendor; })[] = await Promise.all(
@@ -1882,8 +1896,8 @@ export class DatabaseStorage implements IStorage {
       orderInGroups: purchaseOrderItems.orderInGroups,
       createdAt: purchaseOrderItems.createdAt
     })
-    .from(purchaseOrderItems)
-    .where(eq(purchaseOrderItems.purchaseOrderId, purchaseOrder.id));
+      .from(purchaseOrderItems)
+      .where(eq(purchaseOrderItems.purchaseOrderId, purchaseOrder.id));
 
     // Get supply and vendor details for each item
     const itemsWithDetails: (typeof purchaseOrderItems.$inferSelect & { supply: Supply; vendor: Vendor })[] = await Promise.all(
@@ -2028,6 +2042,80 @@ export class DatabaseStorage implements IStorage {
       // Return empty array on error
       return [];
     }
+  }
+  async getJobSheets(jobId: number): Promise<JobSheet[]> {
+    return db.select().from(jobSheets).where(eq(jobSheets.jobId, jobId));
+  }
+
+  async createJobSheet(data: InsertJobSheet): Promise<JobSheet> {
+    const [sheet] = await db.insert(jobSheets).values(data).returning();
+    return sheet;
+  }
+
+  async deleteJobSheet(id: number): Promise<void> {
+    await db.delete(jobSheets).where(eq(jobSheets.id, id));
+  }
+
+  async getJobHardware(jobId: number): Promise<JobHardware[]> {
+    return db
+      .select({
+        id: jobHardware.id,
+        jobId: jobHardware.jobId,
+        supplyId: jobHardware.supplyId,
+        onHand: jobHardware.onHand,
+        available: jobHardware.available,
+        allocated: jobHardware.allocated,
+        used: jobHardware.used,
+        stillRequired: jobHardware.stillRequired,
+        createdAt: jobHardware.createdAt,
+        updatedAt: jobHardware.updatedAt,
+        supply: supplies,  // Join supply details
+      })
+      .from(jobHardware)
+      .leftJoin(supplies, eq(jobHardware.supplyId, supplies.id))
+      .where(eq(jobHardware.jobId, jobId));
+  }
+
+  async createJobHardware(data: InsertJobHardware): Promise<JobHardware> {
+    const [hardware] = await db.insert(jobHardware).values(data).returning();
+    return hardware;
+  }
+
+  async deleteJobHardware(id: number): Promise<void> {
+    await db.delete(jobHardware).where(eq(jobHardware.id, id));
+  }
+
+  async getJobRods(jobId: number): Promise<JobRod[]> {
+    return db.select().from(jobRods).where(eq(jobRods.jobId, jobId));
+  }
+
+  async createJobRod(data: InsertJobRod): Promise<JobRod> {
+    const [rod] = await db.insert(jobRods).values(data).returning();
+    return rod;
+  }
+
+  async deleteJobRod(id: number): Promise<void> {
+    await db.delete(jobRods).where(eq(jobRods.id, id));
+  }
+
+  async getJobChecklists(jobId: number): Promise<PartChecklistType[]> {
+    const checklists = await db.select().from(partChecklists).where(eq(partChecklists.jobId, jobId));
+    if (checklists.length === 0) return [];
+
+    const items = await db
+      .select()
+      .from(partChecklistItems)
+      .where(inArray(partChecklistItems.checklistId, checklists.map(c => c.id)));
+
+    return checklists.map(checklist => ({
+      ...checklist,
+      items: items.filter(item => item.checklistId === checklist.id),
+    })) as PartChecklistType[];
+  }
+
+  async findSupplyByName(name: string): Promise<Supply | undefined> {
+    const [supply] = await db.select().from(supplies).where(ilike(supplies.name, `%${name}%`)).limit(1);
+    return supply;
   }
 }
 

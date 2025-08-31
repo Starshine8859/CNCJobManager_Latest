@@ -331,31 +331,20 @@ export const sheetCutLogs = pgTable("sheet_cut_logs", {
 // Part checklist tables for job preparation feature
 export const partChecklists = pgTable("part_checklists", {
   id: serial("id").primaryKey(),
+  jobId: integer("job_id").references(() => jobs.id).notNull(),
   name: text("name").notNull(),
-  description: text("description"),
-  isTemplate: boolean("is_template").default(true), // Template vs job-specific
-  jobId: integer("job_id").references(() => jobs.id), // null for templates
-  createdBy: integer("created_by")
-    .references(() => users.id)
-    .notNull(),
+  createdBy: integer("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-})
-
+});
 export const partChecklistItems = pgTable("part_checklist_items", {
   id: serial("id").primaryKey(),
-  checklistId: integer("checklist_id")
-    .references(() => partChecklists.id)
-    .notNull(),
-  name: text("name").notNull(),
-  description: text("description"),
-  category: text("category").default("general"), // sheets, hardware, rods, general
-  sortOrder: integer("sort_order").default(0),
-  isCompleted: boolean("is_completed").default(false),
-  completedAt: timestamp("completed_at"),
-  completedBy: integer("completed_by").references(() => users.id),
+  checklistId: integer("checklist_id").references(() => partChecklists.id).notNull(),
+  partName: text("part_name").notNull(),
+  qty: integer("qty").notNull(),
+  isChecked: boolean("is_checked").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-})
+});
 
 // G-Code files table for future validation feature
 export const gcodeFiles = pgTable("gcode_files", {
@@ -375,44 +364,37 @@ export const gcodeFiles = pgTable("gcode_files", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
-
 // New job category tables
 export const jobRods = pgTable("job_rods", {
   id: serial("id").primaryKey(),
-  jobId: integer("job_id")
-    .references(() => jobs.id)
-    .notNull(),
+  jobId: integer("job_id").references(() => jobs.id).notNull(),
   rodName: text("rod_name").notNull(),
-  lengthInches: text("length_inches").notNull(), // Format like "5 5/16"
+  lengthInches: integer("length_inches").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-})
+});
 
 export const jobSheets = pgTable("job_sheets", {
   id: serial("id").primaryKey(),
-  jobId: integer("job_id")
-    .references(() => jobs.id)
-    .notNull(),
+  jobId: integer("job_id").references(() => jobs.id).notNull(),
   materialType: text("material_type").notNull(),
-  qty: integer("qty").notNull().default(1),
+  qty: integer("qty").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-})
+});
 
 export const jobHardware = pgTable("job_hardware", {
   id: serial("id").primaryKey(),
-  jobId: integer("job_id")
-    .references(() => jobs.id)
-    .notNull(),
-  hardwareName: text("hardware_name").notNull(),
-  qty: integer("qty").notNull().default(1),
-  onHandQty: integer("on_hand_qty").notNull().default(0),
-  needed: integer("needed").notNull().default(0),
+  jobId: integer("job_id").references(() => jobs.id).notNull(),
+  supplyId: integer("supply_id").references(() => supplies.id).notNull(),
+  onHand: integer("on_hand").notNull().default(0),
+  available: integer("available").notNull().default(0),
+  allocated: integer("allocated").notNull().default(0),
   used: integer("used").notNull().default(0),
   stillRequired: integer("still_required").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-})
+});
 
 // Relations
 export const jobsRelations = relations(jobs, ({ many }) => ({
@@ -512,11 +494,7 @@ export const partChecklistItemsRelations = relations(partChecklistItems, ({ one 
     fields: [partChecklistItems.checklistId],
     references: [partChecklists.id],
   }),
-  completedByUser: one(users, {
-    fields: [partChecklistItems.completedBy],
-    references: [users.id],
-  }),
-}))
+}));
 
 export const gcodeFilesRelations = relations(gcodeFiles, ({ one }) => ({
   job: one(jobs, {
@@ -541,7 +519,11 @@ export const jobHardwareRelations = relations(jobHardware, ({ one }) => ({
     fields: [jobHardware.jobId],
     references: [jobs.id],
   }),
-}))
+  supply: one(supplies, {
+    fields: [jobHardware.supplyId],
+    references: [supplies.id],
+  }),
+}));
 
 export const jobRodsRelations = relations(jobRods, ({ one }) => ({
   job: one(jobs, {
@@ -774,19 +756,25 @@ export const insertJobSheetSchema = createInsertSchema(jobSheets).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
-})
+});
 
 export const insertJobHardwareSchema = createInsertSchema(jobHardware).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
-})
+});
 
-export const insertJobRodSchema = createInsertSchema(jobRods).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-})
+export const insertJobRodSchema = createInsertSchema(jobRods)
+  .omit({
+    id: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+  .extend({
+    lengthInches: z.number().int().positive('Length must be a positive integer'),
+    rodName: z.string().min(1, 'Rod name is required'),
+    jobId: z.number(),
+  });
 
 export const createJobSchema = z.object({
   customerName: z.string().min(1, "Customer name is required"),
@@ -838,14 +826,14 @@ export type CutlistWithMaterials = Cutlist & {
 }
 
 export type JobWithCutlists = Job & {
-  cutlists: CutlistWithMaterials[]
-  timeLogs: JobTimeLog[]
-  partChecklists: PartChecklist[]
-  gcodeFiles: GcodeFile[]
-  sheets: JobSheet[]
-  hardware: JobHardware[]
-  rods: JobRod[]
-}
+  cutlists: CutlistWithMaterials[];
+  timeLogs: JobTimeLog[];
+  partChecklists: PartChecklist[];
+  gcodeFiles: GcodeFile[];
+  sheets: JobSheet[];
+  hardware: JobHardware[];
+  rods: JobRod[];
+};
 
 // Keep backward compatibility - include timer logs
 export type JobWithMaterials = Job & {
@@ -954,3 +942,7 @@ export type PartChecklistWithItems = PartChecklist & {
   items: PartChecklistItem[]
   createdByUser: User
 }
+
+export type PartChecklistType = PartChecklist & {
+  items: PartChecklistItem[];
+};

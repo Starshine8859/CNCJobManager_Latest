@@ -17,7 +17,14 @@ import {
   insertColorGroupSchema,
   insertSupplyWithRelationsSchema,
   insertLocationSchema,
+  insertJobSheetSchema,
+  insertJobRodSchema,
+  insertJobHardwareSchema,
+  insertJobSchema,
   insertVendorSchema,
+  jobSheets,
+  jobHardware,
+  jobRods,
   inventoryMovements,
   supplyLocations,
   supplies,
@@ -34,7 +41,8 @@ import { db } from "./db"
 import { eq, and, or, lte, gte, desc, sql, inArray } from "drizzle-orm"
 import "./types"
 import partChecklistsRouter from "./routes/part-checklists"
-
+import csvParser from 'csv-parser';
+import XLSX from 'xlsx';
 // File upload configuration
 const uploadDir = path.join(process.cwd(), "uploads")
 if (!fs.existsSync(uploadDir)) {
@@ -237,6 +245,296 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(401).json({ message: "Not authenticated" })
     }
   })
+  // GET supplies (for hardware select)
+  app.get('/api/supplies', requireAuth, async (req, res) => {
+    try {
+      const suppliesList = await storage.getAllSupplies();
+      res.json(suppliesList);
+    } catch (error) {
+      console.error('Error fetching supplies:', error);
+      res.status(500).json({ message: 'Failed to fetch supplies' });
+    }
+  });
+
+  // Sheets routes
+  app.get('/api/jobs/:id/sheets', requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id);
+      const sheets = await storage.getJobSheets(jobId);
+      res.json(sheets);
+    } catch (error) {
+      console.error('Error fetching job sheets:', error);
+      res.status(500).json({ message: 'Failed to fetch job sheets' });
+    }
+  });
+
+  app.post('/api/jobs/:id/sheets', requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id);
+      const data = insertJobSheetSchema.parse({ ...req.body, jobId });
+      const sheet = await storage.createJobSheet(data);
+      const job = await storage.getJob(jobId);
+      broadcastToClients({ type: 'job_updated', data: job });
+      res.json(sheet);
+    } catch (error) {
+      console.error('Error adding sheet:', error);
+      res.status(500).json({ message: 'Failed to add sheet' });
+    }
+  });
+
+  app.delete('/api/jobs/:id/sheets/:sheetId', requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id);
+      const sheetId = Number.parseInt(req.params.sheetId);
+      await storage.deleteJobSheet(sheetId);
+      const job = await storage.getJob(jobId);
+      broadcastToClients({ type: 'job_updated', data: job });
+      res.json({ message: 'Sheet deleted' });
+    } catch (error) {
+      console.error('Error deleting sheet:', error);
+      res.status(500).json({ message: 'Failed to delete sheet' });
+    }
+  });
+
+  // Hardware routes
+  app.get('/api/jobs/:id/hardware', requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id);
+      const hardware = await storage.getJobHardware(jobId);
+      res.json(hardware);
+    } catch (error) {
+      console.error('Error fetching job hardware:', error);
+      res.status(500).json({ message: 'Failed to fetch job hardware' });
+    }
+  });
+
+  app.post('/api/jobs/:id/hardware', requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id);
+      const data = insertJobHardwareSchema.parse({ ...req.body, jobId });
+      const hardware = await storage.createJobHardware(data);
+      const job = await storage.getJob(jobId);
+      broadcastToClients({ type: 'job_updated', data: job });
+      res.json(hardware);
+    } catch (error) {
+      console.error('Error adding hardware:', error);
+      res.status(500).json({ message: 'Failed to add hardware' });
+    }
+  });
+
+  app.delete('/api/jobs/:id/hardware/:hardwareId', requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id);
+      const hardwareId = Number.parseInt(req.params.hardwareId);
+      await storage.deleteJobHardware(hardwareId);
+      const job = await storage.getJob(jobId);
+      broadcastToClients({ type: 'job_updated', data: job });
+      res.json({ message: 'Hardware deleted' });
+    } catch (error) {
+      console.error('Error deleting hardware:', error);
+      res.status(500).json({ message: 'Failed to delete hardware' });
+    }
+  });
+
+  // Rods routes
+  app.get('/api/jobs/:id/rods', requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id);
+      const rods = await storage.getJobRods(jobId);
+      res.json(rods);
+    } catch (error) {
+      console.error('Error fetching job rods:', error);
+      res.status(500).json({ message: 'Failed to fetch job rods' });
+    }
+  });
+
+  app.post('/api/jobs/:id/rods', requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id);
+      const data = insertJobRodSchema.parse({ ...req.body, jobId });
+      const rod = await storage.createJobRod(data);
+      const job = await storage.getJob(jobId);
+      broadcastToClients({ type: 'job_updated', data: job });
+      res.json(rod);
+    } catch (error) {
+      console.error('Error adding rod:', error);
+      res.status(500).json({ message: 'Failed to add rod' });
+    }
+  });
+
+  app.delete('/api/jobs/:id/rods/:rodId', requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id);
+      const rodId = Number.parseInt(req.params.rodId);
+      await storage.deleteJobRod(rodId);
+      const job = await storage.getJob(jobId);
+      broadcastToClients({ type: 'job_updated', data: job });
+      res.json({ message: 'Rod deleted' });
+    } catch (error) {
+      console.error('Error deleting rod:', error);
+      res.status(500).json({ message: 'Failed to delete rod' });
+    }
+  });
+
+  // Checklists route (read-only for modal)
+  app.get('/api/jobs/:id/checklists', requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id);
+      const checklists = await storage.getJobChecklists(jobId);
+      res.json(checklists);
+    } catch (error) {
+      console.error('Error fetching job checklists:', error);
+      res.status(500).json({ message: 'Failed to fetch job checklists' });
+    }
+  });
+
+  // Job action routes (start, pause, resume, complete)
+  app.post('/api/jobs/:id/start', requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id);
+      const userId = req.session.user?.id;
+      await storage.startJob(jobId, userId);
+      const job = await storage.getJob(jobId);
+      broadcastToClients({ type: 'job_updated', data: job });
+      res.json({ message: 'Job started' });
+    } catch (error) {
+      console.error('Error starting job:', error);
+      res.status(500).json({ message: 'Failed to start job' });
+    }
+  });
+
+  app.post('/api/jobs/:id/pause', requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id);
+      await storage.pauseJob(jobId);
+      const job = await storage.getJob(jobId);
+      broadcastToClients({ type: 'job_updated', data: job });
+      res.json({ message: 'Job paused' });
+    } catch (error) {
+      console.error('Error pausing job:', error);
+      res.status(500).json({ message: 'Failed to pause job' });
+    }
+  });
+
+  app.post('/api/jobs/:id/resume', requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id);
+      await storage.resumeJob(jobId);
+      const job = await storage.getJob(jobId);
+      broadcastToClients({ type: 'job_updated', data: job });
+      res.json({ message: 'Job resumed' });
+    } catch (error) {
+      console.error('Error resuming job:', error);
+      res.status(500).json({ message: 'Failed to resume job' });
+    }
+  });
+
+  app.post('/api/jobs/:id/complete', requireAuth, async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id);
+      await storage.completeJob(jobId);
+      const job = await storage.getJob(jobId);
+      broadcastToClients({ type: 'job_updated', data: job });
+      res.json({ message: 'Job completed' });
+    } catch (error) {
+      console.error('Error completing job:', error);
+      res.status(500).json({ message: 'Failed to complete job' });
+    }
+  });
+
+  // Import route (handles CSV/Excel upload and parsing)
+  app.post('/api/jobs/:id/import', requireAuth, upload.single('importFile'), async (req, res) => {
+    try {
+      const jobId = Number.parseInt(req.params.id);
+      const category = req.body.category;
+      const file = req.file;
+
+      if (!file || !category) {
+        return res.status(400).json({ message: 'File and category are required' });
+      }
+
+      let rows: any[] = [];
+      const ext = path.extname(file.originalname).toLowerCase();
+
+      if (ext === '.csv') {
+        rows = await new Promise((resolve, reject) => {
+          const results: any[] = [];
+          fs.createReadStream(file.path)
+            .pipe(csvParser())
+            .on('data', (data) => results.push(data))
+            .on('end', () => resolve(results))
+            .on('error', reject);
+        });
+      } else if (ext === '.xlsx' || ext === '.xls') {
+        const workbook = XLSX.readFile(file.path);
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        rows = XLSX.utils.sheet_to_json(sheet);
+      } else {
+        fs.unlinkSync(file.path);
+        return res.status(400).json({ message: 'Unsupported file type' });
+      }
+
+      fs.unlinkSync(file.path);
+
+      let imported = 0;
+
+      await db.transaction(async (tx) => {
+        if (category === 'sheets') {
+          for (const row of rows) {
+            const materialType = row.materialtype?.trim();
+            const qty = parseInt(row.qty);
+            if (materialType && !isNaN(qty) && qty > 0) {
+              await tx.insert(jobSheets).values({ jobId, materialType, qty }).returning();
+              imported++;
+            }
+          }
+        } else if (category === 'hardware') {
+          for (const row of rows) {
+            const hardwarename = row.hardwarename?.trim();
+            const allocated = parseInt(row.allocated) || 0;
+            const used = parseInt(row.used) || 0;
+            const stillRequired = parseInt(row.stillrequired) || 0;
+            if (hardwarename) {
+              const supply = await storage.findSupplyByName(hardwarename);
+              if (supply) {
+                await tx.insert(jobHardware).values({
+                  jobId,
+                  supplyId: supply.id,
+                  onHand: 0,
+                  available: 0,
+                  allocated,
+                  used,
+                  stillRequired,
+                }).returning();
+                imported++;
+              }
+            }
+          }
+        } else if (category === 'rods') {
+          for (const row of rows) {
+            const rodName = row.rodname?.trim();
+            const lengthInches = parseInt(row.lengthinches); // Already parsing to number
+            if (rodName && !isNaN(lengthInches) && lengthInches > 0) {
+              await tx.insert(jobRods).values({ jobId, rodName, lengthInches }).returning();
+              imported++;
+            }
+          }
+        } else {
+          throw new Error('Invalid category');
+        }
+      });
+
+      const job = await storage.getJob(jobId);
+      broadcastToClients({ type: 'job_updated', data: job });
+
+      res.json({ imported });
+    } catch (error) {
+      console.error('Import error:', error);
+      if (req.file?.path) fs.unlinkSync(req.file.path);
+      res.status(500).json({ message: 'Failed to import data' });
+    }
+  });
 
   // Job routes
   app.get("/api/jobs", requireAuth, async (req, res) => {
@@ -607,9 +905,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           updatedAt: supply.updatedAt,
           group: primaryLocation
             ? {
-                id: primaryLocation.id,
-                name: primaryLocation.name,
-              }
+              id: primaryLocation.id,
+              name: primaryLocation.name,
+            }
             : null,
         }
       })
@@ -1001,32 +1299,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         orderIds.length === 0
           ? []
           : await db
-              .select({
-                id: purchaseOrderItems.id,
-                purchaseOrderId: purchaseOrderItems.purchaseOrderId,
-                supplyId: purchaseOrderItems.supplyId,
-                vendorId: purchaseOrderItems.vendorId,
-                locationId: purchaseOrderItems.locationId,
-                neededQuantity: purchaseOrderItems.neededQuantity,
-                orderQuantity: purchaseOrderItems.orderQuantity,
-                receivedQuantity: purchaseOrderItems.receivedQuantity,
-                pricePerUnit: purchaseOrderItems.pricePerUnit,
-                totalPrice: purchaseOrderItems.totalPrice,
-                supply: {
-                  id: supplies.id,
-                  name: supplies.name,
-                  hexColor: supplies.hexColor,
-                  pieceSize: supplies.pieceSize,
-                },
-                location: {
-                  id: locations.id,
-                  name: locations.name,
-                },
-              })
-              .from(purchaseOrderItems)
-              .leftJoin(supplies, eq(purchaseOrderItems.supplyId, supplies.id))
-              .leftJoin(locations, eq(purchaseOrderItems.locationId, locations.id))
-              .where(inArray(purchaseOrderItems.purchaseOrderId, orderIds))
+            .select({
+              id: purchaseOrderItems.id,
+              purchaseOrderId: purchaseOrderItems.purchaseOrderId,
+              supplyId: purchaseOrderItems.supplyId,
+              vendorId: purchaseOrderItems.vendorId,
+              locationId: purchaseOrderItems.locationId,
+              neededQuantity: purchaseOrderItems.neededQuantity,
+              orderQuantity: purchaseOrderItems.orderQuantity,
+              receivedQuantity: purchaseOrderItems.receivedQuantity,
+              pricePerUnit: purchaseOrderItems.pricePerUnit,
+              totalPrice: purchaseOrderItems.totalPrice,
+              supply: {
+                id: supplies.id,
+                name: supplies.name,
+                hexColor: supplies.hexColor,
+                pieceSize: supplies.pieceSize,
+              },
+              location: {
+                id: locations.id,
+                name: locations.name,
+              },
+            })
+            .from(purchaseOrderItems)
+            .leftJoin(supplies, eq(purchaseOrderItems.supplyId, supplies.id))
+            .leftJoin(locations, eq(purchaseOrderItems.locationId, locations.id))
+            .where(inArray(purchaseOrderItems.purchaseOrderId, orderIds))
 
       const itemsByOrder: Record<number, any[]> = {}
       for (const it of allItems) {
