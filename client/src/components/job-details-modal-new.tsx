@@ -351,7 +351,7 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-6">
+      <DialogContent className="max-w-4xl h-[80vh] overflow-y-auto p-6">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold text-orange-800">
             {job.jobName} - {job.customerName}
@@ -398,7 +398,7 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
             <TabsTrigger value="import">Import</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="checklists" className="space-y-4">
+          <TabsContent value="checklists" className="space-y-4 max-h-[60vh] overflow-y-auto">
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg text-green-700">Job Checklists</CardTitle>
@@ -488,7 +488,7 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
             </Card>
           </TabsContent>
 
-          <TabsContent value="sheets" className="space-y-4">
+          <TabsContent value="sheets" className="space-y-4 max-h-[60vh] overflow-y-auto">
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg text-blue-700">Job Sheets</CardTitle>
@@ -543,7 +543,7 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
             </Card>
           </TabsContent>
 
-          <TabsContent value="hardware" className="space-y-4">
+          <TabsContent value="hardware" className="space-y-4 max-h-[60vh] overflow-y-auto">
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg text-orange-700">Job Hardware</CardTitle>
@@ -640,7 +640,7 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
             </Card>
           </TabsContent>
 
-          <TabsContent value="rods" className="space-y-4">
+          <TabsContent value="rods" className="space-y-4 max-h-[60vh] overflow-y-auto">
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg text-green-700">Job Rods</CardTitle>
@@ -695,7 +695,7 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
             </Card>
           </TabsContent>
 
-          <TabsContent value="import" className="space-y-4">
+          <TabsContent value="import" className="space-y-4 max-h-[60vh] overflow-y-auto">
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg text-gray-700">Import Job Data</CardTitle>
@@ -712,7 +712,7 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
         </Tabs>
 
         <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-          <DialogContent className="max-w-md p-6">
+          <DialogContent className="max-w-md h-[50vh] overflow-y-auto p-6">
             <DialogHeader>
               <DialogTitle>Import Job Data</DialogTitle>
             </DialogHeader>
