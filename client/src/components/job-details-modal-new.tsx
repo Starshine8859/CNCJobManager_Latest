@@ -351,124 +351,107 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl h-[80vh] overflow-y-auto p-6">
-        <DialogHeader>
-          <DialogTitle className="text-2xl font-bold text-orange-800">
-            {job.jobName} - {job.customerName}
-          </DialogTitle>
-          <div className="flex items-center space-x-2 mt-2">
-            <Badge className={getStatusColor(job.status)}>{job.status.replace("_", " ").toUpperCase()}</Badge>
-            <span className="text-sm text-gray-600">Job #{job.jobNumber}</span>
-          </div>
-        </DialogHeader>
-
-        <div className="flex justify-end space-x-2 mb-4">
-          {!viewOnlyMode && isWaiting && (
-            <Button onClick={handleStartJob} className="bg-green-600 hover:bg-green-700">
-              Start Job
-            </Button>
-          )}
-          {!viewOnlyMode && isInProgress && (
-            <Button onClick={handlePauseJob} className="bg-yellow-600 hover:bg-yellow-700">
-              Pause Job
-            </Button>
-          )}
-          {!viewOnlyMode && isPaused && (
-            <Button onClick={handleResumeJob} className="bg-blue-600 hover:bg-blue-700">
-              Resume Job
-            </Button>
-          )}
-          {!viewOnlyMode && (isInProgress || isPaused) && (
-            <Button onClick={handleCompleteJob} className="bg-green-600 hover:bg-green-700">
-              Complete Job
-            </Button>
-          )}
-          <Button variant="outline" onClick={handleOpenPopup}>
+      <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[1280px] h-[80vh] overflow-y-auto p-1 sm:p-2">
+        <div className="flex justify-between items-start mb-0">
+          <DialogHeader>
+            <DialogTitle className="text-xl sm:text-2xl font-bold text-orange-800">
+              {job.jobName} - {job.customerName}
+            </DialogTitle>
+            <div className="flex items-center space-x-2 mt-0.5">
+              <Badge className={`text-xs sm:text-sm ${getStatusColor(job.status)}`}>{job.status.replace("_", " ").toUpperCase()}</Badge>
+              <span className="text-xs sm:text-sm text-gray-600">Job #{job.jobNumber}</span>
+            </div>
+          </DialogHeader>
+          <Button variant="outline" onClick={handleOpenPopup} className="text-xs sm:text-sm ml-2">
             <Maximize2 className="w-4 h-4 mr-2" />
             Open in Popup
           </Button>
         </div>
 
-        <Tabs defaultValue="checklists" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="checklists">Checklists</TabsTrigger>
-            <TabsTrigger value="sheets">Sheets</TabsTrigger>
-            <TabsTrigger value="hardware">Hardware</TabsTrigger>
-            <TabsTrigger value="rods">Rods</TabsTrigger>
-            <TabsTrigger value="import">Import</TabsTrigger>
+        <Tabs defaultValue="checklists" className="mt-0 space-y-1">
+          <TabsList className="grid grid-cols-3 sm:grid-cols-5 w-full">
+            <TabsTrigger value="checklists" className="text-xs sm:text-sm">Checklists</TabsTrigger>
+            <TabsTrigger value="sheets" className="text-xs sm:text-sm">Sheets</TabsTrigger>
+            <TabsTrigger value="hardware" className="text-xs sm:text-sm">Hardware</TabsTrigger>
+            <TabsTrigger value="rods" className="text-xs sm:text-sm">Rods</TabsTrigger>
+            <TabsTrigger value="import" className="text-xs sm:text-sm">Import</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="checklists" className="space-y-4 max-h-[60vh] overflow-y-auto">
+          <TabsContent value="checklists" className="space-y-1 max-h-[60vh] overflow-y-auto">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg text-green-700">Job Checklists</CardTitle>
-                <CardDescription>Track parts and checklists for this job</CardDescription>
+                <CardTitle className="text-base sm:text-lg text-green-700">Job Checklists</CardTitle>
+                <CardDescription className="text-xs sm:text-sm">Track parts and checklists for this job</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-1">
                 {!viewOnlyMode && (
-                  <div className="grid grid-cols-1 gap-4 p-4 bg-green-50 rounded-lg">
+                  <div className="grid grid-cols-1 gap-1 p-1 bg-green-50 rounded-lg">
                     <div>
-                      <Label htmlFor="checklist-name">Checklist Name</Label>
+                      <Label htmlFor="checklist-name" className="text-xs sm:text-sm">Checklist Name</Label>
                       <Input
                         id="checklist-name"
                         value={newChecklistName}
                         onChange={(e) => setNewChecklistName(e.target.value)}
                         placeholder="e.g., Parts Checklist"
+                        className="text-xs sm:text-sm"
                       />
                     </div>
                     {newChecklistItems.map((item, index) => (
-                      <div key={index} className="grid grid-cols-3 gap-2">
+                      <div key={index} className="grid grid-cols-1 sm:grid-cols-3 gap-1">
                         <div>
-                          <Label htmlFor={`item-part-${index}`}>Part Name</Label>
+                          <Label htmlFor={`item-part-${index}`} className="text-xs sm:text-sm">Part Name</Label>
                           <Input
                             id={`item-part-${index}`}
                             value={item.partName}
                             onChange={(e) => handleChecklistItemChange(index, "partName", e.target.value)}
                             placeholder="e.g., Bracket"
+                            className="text-xs sm:text-sm"
                           />
                         </div>
                         <div>
-                          <Label htmlFor={`item-qty-${index}`}>Quantity</Label>
+                          <Label htmlFor={`item-qty-${index}`} className="text-xs sm:text-sm">Quantity</Label>
                           <Input
                             id={`item-qty-${index}`}
                             type="number"
                             value={item.qty}
                             onChange={(e) => handleChecklistItemChange(index, "qty", e.target.value)}
                             placeholder="0"
+                            className="text-xs sm:text-sm"
                           />
                         </div>
-                        <div className="flex items-center space-x-2 mt-6">
+                        <div className="flex items-center space-x-1 sm:mt-1">
                           <Input
                             type="checkbox"
                             checked={item.isChecked}
                             onChange={(e) => handleChecklistItemChange(index, "isChecked", e.target.checked)}
+                            className="h-4 w-4"
                           />
-                          <Label>Checked</Label>
+                          <Label className="text-xs sm:text-sm">Checked</Label>
                         </div>
                       </div>
                     ))}
-                    <div className="flex space-x-2">
-                      <Button variant="outline" onClick={handleAddChecklistItemInput} className="flex-1">
+                    <div className="flex flex-col sm:flex-row gap-1">
+                      <Button variant="outline" onClick={handleAddChecklistItemInput} className="flex-1 text-xs sm:text-sm">
                         Add Another Item
                       </Button>
-                      <Button onClick={handleAddChecklist} className="flex-1 bg-blue-600 hover:bg-blue-700">
+                      <Button onClick={handleAddChecklist} className="flex-1 bg-blue-600 hover:bg-blue-700 text-xs sm:text-sm">
                         Add Checklist
                       </Button>
                     </div>
                   </div>
                 )}
-                <div className="space-y-2">
+                <div className="space-y-0.5">
                   {jobChecklists.map((checklist) => (
-                    <div key={checklist.id} className="p-3 bg-white border rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium">{checklist.name}</span>
+                    <div key={checklist.id} className="p-1 bg-white border rounded-lg">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="font-medium text-sm sm:text-base">{checklist.name}</span>
                         {!viewOnlyMode && (
                           <Button variant="ghost" size="sm" onClick={() => handleDeleteChecklist(checklist.id)}>
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         )}
                       </div>
-                      <div className="space-y-1 text-sm text-gray-600">
+                      <div className="space-y-0.5 text-xs sm:text-sm text-gray-600">
                         {checklist.items.map((item) => (
                           <div key={item.id} className="flex items-center justify-between">
                             <span>{item.partName} - Qty: {item.qty}</span>
@@ -477,6 +460,7 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
                               checked={item.isChecked}
                               disabled
                               aria-readonly="true"
+                              className="h-4 w-4"
                             />
                           </div>
                         ))}
@@ -488,48 +472,50 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
             </Card>
           </TabsContent>
 
-          <TabsContent value="sheets" className="space-y-4 max-h-[60vh] overflow-y-auto">
+          <TabsContent value="sheets" className="space-y-1 max-h-[60vh] overflow-y-auto">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg text-blue-700">Job Sheets</CardTitle>
-                <CardDescription>Manage sheets for this job</CardDescription>
+                <CardTitle className="text-base sm:text-lg text-blue-700">Job Sheets</CardTitle>
+                <CardDescription className="text-xs sm:text-sm">Manage sheets for this job</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-1">
                 {!viewOnlyMode && (
-                  <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 p-1 bg-blue-50 rounded-lg">
                     <div>
-                      <Label htmlFor="sheet-material">Material Type</Label>
+                      <Label htmlFor="sheet-material" className="text-xs sm:text-sm">Material Type</Label>
                       <Input
                         id="sheet-material"
                         value={newSheetMaterialType}
                         onChange={(e) => setNewSheetMaterialType(e.target.value)}
                         placeholder="e.g., Wood, Metal"
+                        className="text-xs sm:text-sm"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="sheet-qty">Quantity</Label>
+                      <Label htmlFor="sheet-qty" className="text-xs sm:text-sm">Quantity</Label>
                       <Input
                         id="sheet-qty"
                         type="number"
                         value={newSheetQty}
                         onChange={(e) => setNewSheetQty(e.target.value)}
                         placeholder="0"
+                        className="text-xs sm:text-sm"
                       />
                     </div>
-                    <div className="col-span-2">
-                      <Button onClick={handleAddSheet} className="w-full bg-blue-600 hover:bg-blue-700">
+                    <div className="col-span-1 sm:col-span-2">
+                      <Button onClick={handleAddSheet} className="w-full bg-blue-600 hover:bg-blue-700 text-xs sm:text-sm">
                         <Plus className="w-4 h-4 mr-2" />
                         Add Sheet
                       </Button>
                     </div>
                   </div>
                 )}
-                <div className="space-y-2">
+                <div className="space-y-0.5">
                   {jobSheets.map((sheet) => (
-                    <div key={sheet.id} className="flex items-center justify-between p-3 bg-white border rounded-lg">
+                    <div key={sheet.id} className="flex items-center justify-between p-1 bg-white border rounded-lg">
                       <div>
-                        <span className="font-medium">{sheet.materialType}</span>
-                        <span className="ml-2 text-sm text-gray-600">Qty: {sheet.qty}</span>
+                        <span className="font-medium text-sm sm:text-base">{sheet.materialType}</span>
+                        <span className="ml-0.5 text-xs sm:text-sm text-gray-600">Qty: {sheet.qty}</span>
                       </div>
                       {!viewOnlyMode && (
                         <Button variant="ghost" size="sm" onClick={() => handleDeleteSheet(sheet.id)}>
@@ -543,24 +529,24 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
             </Card>
           </TabsContent>
 
-          <TabsContent value="hardware" className="space-y-4 max-h-[60vh] overflow-y-auto">
+          <TabsContent value="hardware" className="space-y-1 max-h-[60vh] overflow-y-auto">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg text-orange-700">Job Hardware</CardTitle>
-                <CardDescription>Hardware inventory tracking for this job</CardDescription>
+                <CardTitle className="text-base sm:text-lg text-orange-700">Job Hardware</CardTitle>
+                <CardDescription className="text-xs sm:text-sm">Hardware inventory tracking for this job</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-1">
                 {!viewOnlyMode && (
-                  <div className="grid grid-cols-2 gap-4 p-4 bg-orange-50 rounded-lg">
-                    <div className="col-span-2">
-                      <Label htmlFor="hardware-name">Hardware Name</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 p-1 bg-orange-50 rounded-lg">
+                    <div className="col-span-1 sm:col-span-2">
+                      <Label htmlFor="hardware-name" className="text-xs sm:text-sm">Hardware Name</Label>
                       <Select value={newHardwareSupplyId} onValueChange={setNewHardwareSupplyId}>
-                        <SelectTrigger>
+                        <SelectTrigger className="text-xs sm:text-sm">
                           <SelectValue placeholder="Select hardware from inventory" />
                         </SelectTrigger>
                         <SelectContent>
                           {supplies.map((supply) => (
-                            <SelectItem key={supply.id} value={supply.id.toString()}>
+                            <SelectItem key={supply.id} value={supply.id.toString()} className="text-xs sm:text-sm">
                               {supply.name} {supply.partNumber && `(${supply.partNumber})`}
                             </SelectItem>
                           ))}
@@ -568,55 +554,58 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
                       </Select>
                     </div>
                     <div>
-                      <Label htmlFor="hardware-allocated">Allocated</Label>
+                      <Label htmlFor="hardware-allocated" className="text-xs sm:text-sm">Allocated</Label>
                       <Input
                         id="hardware-allocated"
                         type="number"
                         value={newHardwareAllocated}
                         onChange={(e) => setNewHardwareAllocated(e.target.value)}
                         placeholder="0"
+                        className="text-xs sm:text-sm"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="hardware-used">Used</Label>
+                      <Label htmlFor="hardware-used" className="text-xs sm:text-sm">Used</Label>
                       <Input
                         id="hardware-used"
                         type="number"
                         value={newHardwareUsed}
                         onChange={(e) => setNewHardwareUsed(e.target.value)}
                         placeholder="0"
+                        className="text-xs sm:text-sm"
                       />
                     </div>
-                    <div className="col-span-2">
-                      <Label htmlFor="hardware-still-required">Still Required</Label>
+                    <div className="col-span-1 sm:col-span-2">
+                      <Label htmlFor="hardware-still-required" className="text-xs sm:text-sm">Still Required</Label>
                       <Input
                         id="hardware-still-required"
                         type="number"
                         value={newHardwareStillRequired}
                         onChange={(e) => setNewHardwareStillRequired(e.target.value)}
                         placeholder="0"
+                        className="text-xs sm:text-sm"
                       />
                     </div>
-                    <div className="col-span-2">
-                      <Button onClick={handleAddHardware} className="w-full bg-orange-600 hover:bg-orange-700">
+                    <div className="col-span-1 sm:col-span-2">
+                      <Button onClick={handleAddHardware} className="w-full bg-orange-600 hover:bg-orange-700 text-xs sm:text-sm">
                         <Plus className="w-4 h-4 mr-2" />
                         Add Hardware
                       </Button>
                     </div>
                   </div>
                 )}
-                <div className="space-y-2">
+                <div className="space-y-0.5">
                   {jobHardware.map((hardware) => (
-                    <div key={hardware.id} className="p-3 bg-white border rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium">{hardware.supply?.name || "Unknown Hardware"}</span>
+                    <div key={hardware.id} className="p-1 bg-white border rounded-lg">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="font-medium text-sm sm:text-base">{hardware.supply?.name || "Unknown Hardware"}</span>
                         {!viewOnlyMode && (
                           <Button variant="ghost" size="sm" onClick={() => handleDeleteHardware(hardware.id)}>
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 text-sm text-gray-600">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-0.5 text-xs sm:text-sm text-gray-600">
                         <div>
                           On Hand: <span className="font-medium text-gray-800">{hardware.onHand}</span>
                         </div>
@@ -640,48 +629,50 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
             </Card>
           </TabsContent>
 
-          <TabsContent value="rods" className="space-y-4 max-h-[60vh] overflow-y-auto">
+          <TabsContent value="rods" className="space-y-1 max-h-[60vh] overflow-y-auto">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg text-green-700">Job Rods</CardTitle>
-                <CardDescription>Rod specifications and lengths for this job</CardDescription>
+                <CardTitle className="text-base sm:text-lg text-green-700">Job Rods</CardTitle>
+                <CardDescription className="text-xs sm:text-sm">Rod specifications and lengths for this job</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-1">
                 {!viewOnlyMode && (
-                  <div className="grid grid-cols-2 gap-4 p-4 bg-green-50 rounded-lg">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 p-1 bg-green-50 rounded-lg">
                     <div>
-                      <Label htmlFor="rod-name">Rod Name</Label>
+                      <Label htmlFor="rod-name" className="text-xs sm:text-sm">Rod Name</Label>
                       <Input
                         id="rod-name"
                         value={newRodName}
                         onChange={(e) => setNewRodName(e.target.value)}
                         placeholder="e.g., Closet Rod"
+                        className="text-xs sm:text-sm"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="rod-length">Length (inches)</Label>
+                      <Label htmlFor="rod-length" className="text-xs sm:text-sm">Length (inches)</Label>
                       <Input
                         id="rod-length"
                         type="number"
                         value={newRodLength}
                         onChange={(e) => setNewRodLength(e.target.value)}
                         placeholder="0"
+                        className="text-xs sm:text-sm"
                       />
                     </div>
-                    <div className="col-span-2">
-                      <Button onClick={handleAddRod} className="w-full bg-green-600 hover:bg-green-700">
+                    <div className="col-span-1 sm:col-span-2">
+                      <Button onClick={handleAddRod} className="w-full bg-green-600 hover:bg-green-700 text-xs sm:text-sm">
                         <Plus className="w-4 h-4 mr-2" />
                         Add Rod
                       </Button>
                     </div>
                   </div>
                 )}
-                <div className="space-y-2">
+                <div className="space-y-0.5">
                   {jobRods.map((rod) => (
-                    <div key={rod.id} className="flex items-center justify-between p-3 bg-white border rounded-lg">
+                    <div key={rod.id} className="flex items-center justify-between p-1 bg-white border rounded-lg">
                       <div>
-                        <span className="font-medium">{rod.rodName}</span>
-                        <span className="ml-2 text-sm text-gray-600">Length: {rod.lengthInches}"</span>
+                        <span className="font-medium text-sm sm:text-base">{rod.rodName}</span>
+                        <span className="ml-0.5 text-xs sm:text-sm text-gray-600">Length: {rod.lengthInches}"</span>
                       </div>
                       {!viewOnlyMode && (
                         <Button variant="ghost" size="sm" onClick={() => handleDeleteRod(rod.id)}>
@@ -695,14 +686,14 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
             </Card>
           </TabsContent>
 
-          <TabsContent value="import" className="space-y-4 max-h-[60vh] overflow-y-auto">
+          <TabsContent value="import" className="space-y-1 max-h-[60vh] overflow-y-auto">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg text-gray-700">Import Job Data</CardTitle>
-                <CardDescription>Upload CSV or Excel files to import job data</CardDescription>
+                <CardTitle className="text-base sm:text-lg text-gray-700">Import Job Data</CardTitle>
+                <CardDescription className="text-xs sm:text-sm">Upload CSV or Excel files to import job data</CardDescription>
               </CardHeader>
               <CardContent>
-                <Button onClick={() => setShowImportDialog(true)} className="w-full bg-gray-600 hover:bg-gray-700">
+                <Button onClick={() => setShowImportDialog(true)} className="w-full bg-gray-600 hover:bg-gray-700 text-xs sm:text-sm">
                   <Upload className="w-4 h-4 mr-2" />
                   Import Data
                 </Button>
@@ -712,30 +703,30 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
         </Tabs>
 
         <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-          <DialogContent className="max-w-md h-[50vh] overflow-y-auto p-6">
+          <DialogContent className="w-[90vw] sm:w-[500px] h-[60vh] overflow-y-auto p-1 sm:p-2">
             <DialogHeader>
-              <DialogTitle>Import Job Data</DialogTitle>
+              <DialogTitle className="text-base sm:text-lg">Import Job Data</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4">
+            <div className="space-y-1">
               <div>
-                <Label htmlFor="import-category">Category</Label>
+                <Label htmlFor="import-category" className="text-xs sm:text-sm">Category</Label>
                 <Select
                   value={importCategory}
                   onValueChange={(value) => setImportCategory(value as "sheets" | "hardware" | "rods")}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="text-xs sm:text-sm">
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="sheets">Sheets</SelectItem>
-                    <SelectItem value="hardware">Hardware</SelectItem>
-                    <SelectItem value="rods">Rods</SelectItem>
+                    <SelectItem value="sheets" className="text-xs sm:text-sm">Sheets</SelectItem>
+                    <SelectItem value="hardware" className="text-xs sm:text-sm">Hardware</SelectItem>
+                    <SelectItem value="rods" className="text-xs sm:text-sm">Rods</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label htmlFor="import-file">File (CSV or Excel)</Label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                <Label htmlFor="import-file" className="text-xs sm:text-sm">File (CSV or Excel)</Label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-1 text-center">
                   <input
                     type="file"
                     accept=".csv,.xlsx,.xls"
@@ -745,14 +736,14 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
                     disabled={isUploading}
                   />
                   <label htmlFor="import-file" className="cursor-pointer">
-                    <FileText className="h-8 w-8 mx-auto text-gray-400 mb-2" />
-                    <p className="text-sm text-gray-600">
+                    <FileText className="h-6 sm:h-8 w-6 sm:w-8 mx-auto text-gray-400 mb-0.5" />
+                    <p className="text-xs sm:text-sm text-gray-600">
                       {isUploading ? "Uploading..." : "Click to upload CSV or Excel file"}
                     </p>
                   </label>
                 </div>
               </div>
-              <div className="text-xs text-gray-500 space-y-1">
+              <div className="text-xs text-gray-500 space-y-0.5">
                 <p>
                   <strong>Expected columns for {importCategory}:</strong>
                 </p>
@@ -760,8 +751,8 @@ function JobDetailsModal({ job, open, onOpenChange, viewOnlyMode = false }: JobD
                 {importCategory === "hardware" && <p>hardwarename, allocated, used, stillrequired</p>}
                 {importCategory === "rods" && <p>rodname, lengthinches</p>}
               </div>
-              <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={() => setShowImportDialog(false)}>
+              <div className="flex justify-end gap-1">
+                <Button variant="outline" onClick={() => setShowImportDialog(false)} className="text-xs sm:text-sm">
                   Cancel
                 </Button>
               </div>
